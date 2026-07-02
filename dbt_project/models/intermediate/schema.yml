@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: int_books
+    columns:
+      - name: asin
+        tests:
+          - not_null
+
+  - name: rejected_books
+    columns:
+      - name: rejection_reason
+        tests:
+          - not_null

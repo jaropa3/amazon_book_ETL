@@ -1,0 +1,16 @@
+scraper:
+  base_url: "https://www.amazon.com/s"
+  keyword: "data engineering"
+  num_pages: 5
+  max_retries: 4
+  backoff_base: 2
+  delay_between_pages:
+    min: 2
+    max: 4
+
+storage:
+  raw_data_dir: "data/raw_data"
+
+database:
+  schema: bronze
+  table: books

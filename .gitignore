@@ -1,0 +1,32 @@
+# Sekrety
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Dane pipeline'u (CSV ze scrapowania)
+data/
+
+# Logi
+logs/
+*.log
+
+# Airflow — runtime, nie kod (DAG-i zostają w repo)
+airflow/logs/
+airflow/airflow.db
+airflow/airflow.cfg
+airflow/simple_auth_manager_passwords.json.generated
+
+# dbt — artefakty kompilacji
+dbt_project/target/
+dbt_project/logs/
+dbt_project/dbt_packages/
+
+# Claude Code
+.claude/
+
+# docs — tylko architecture.md w repo
+docs/*
+!docs/architecture.md
