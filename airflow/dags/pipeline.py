@@ -13,7 +13,11 @@ DBT_OPTS = f"--project-dir {DBT_PROJECT_DIR} --profiles-dir ~/.dbt"
 from airflow import DAG
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
-from airflow.providers.standard.operators.python import PythonOperator, ShortCircuitOperator, BranchPythonOperator
+from airflow.providers.standard.operators.python import (
+    PythonOperator,
+    ShortCircuitOperator,
+    BranchPythonOperator,
+)
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.task.trigger_rule import TriggerRule
 from airflow.providers.slack.notifications.slack_webhook import SlackWebhookNotifier
@@ -24,10 +28,13 @@ from logging_db import log_run_task, upsert_pipeline_run, BACKLOG_BRANCH
 
 
 def _has_pending_files() -> bool:
-    return bool([
-        f for f in os.listdir(RAW_DATA_DIR)
-        if f.startswith(f"{DB_TABLE}_") and f.endswith(".csv")
-    ])
+    return bool(
+        [
+            f
+            for f in os.listdir(RAW_DATA_DIR)
+            if f.startswith(f"{DB_TABLE}_") and f.endswith(".csv")
+        ]
+    )
 
 
 def _branch_start() -> str:
@@ -59,6 +66,7 @@ DEF_ARGS = {
     "on_failure_callback": task_failure_logger,
 }
 
+
 def dag_failure_alert(context) -> None:
     dag_run_id = context["dag_run"].run_id
     SlackWebhookNotifier(
@@ -77,14 +85,15 @@ def dag_failure_alert(context) -> None:
 
 def dag_success_alert(context) -> None:
     dag_run_id = context["dag_run"].run_id
-    con = connection_db()
-    with con.cursor() as cur:
-        cur.execute("""
+    with connection_db() as con, con.cursor() as cur:
+        cur.execute(
+            """
             SELECT scraped_count, gold_inserted_count, registry_new_count
             FROM logs.pipeline_runs WHERE dag_run_id = %s
-        """, (dag_run_id,))
+        """,
+            (dag_run_id,),
+        )
         row = cur.fetchone()
-    con.close()
     scraped, gold, registry = row or (0, 0, 0)
 
     SlackWebhookNotifier(
@@ -97,19 +106,21 @@ def dag_success_alert(context) -> None:
     )(context)
     upsert_pipeline_run(dag_run_id, context["dag_run"].dag_id, status="success")
 
-with DAG(
-    dag_id="amazon_books_pipeline",
-    default_args=DEF_ARGS,
-    description="fetch and store amazon books info",
-    start_date=datetime(2024, 1, 1),
-    schedule="*/30 * * * *",
-    catchup=False,
-    max_active_runs=1,
-    on_failure_callback=dag_failure_alert,   # odpala się raz, gdy cały DAG run zakończy się porażką
-    is_paused_upon_creation=True,
-    max_active_tasks=2,
-) as dag:
 
+with (
+    DAG(
+        dag_id="amazon_books_pipeline",
+        default_args=DEF_ARGS,
+        description="fetch and store amazon books info",
+        start_date=datetime(2024, 1, 1),
+        schedule="*/30 * * * *",
+        catchup=False,
+        max_active_runs=1,
+        on_failure_callback=dag_failure_alert,  # odpala się raz, gdy cały DAG run zakończy się porażką
+        is_paused_upon_creation=True,
+        max_active_tasks=2,
+    ) as dag
+):
     check_pending_start = BranchPythonOperator(
         task_id="check_pending_start",
         python_callable=_branch_start,
@@ -131,11 +142,11 @@ with DAG(
     dbt_staging = BashOperator(
         task_id="dbt_staging",
         bash_command=f"{DBT_BIN} run {DBT_OPTS} --select staging",
-    ) # wykona /home/mycka/projects/amazon_books_ETL/.venv/bin/dbt run --project-dir /home/mycka/projects/amazon_books_ETL/dbt_project --profiles-dir ~/.dbt --select staging
-      # .venv/bin/dbt — pełna ścieżka do dbt z virtualenv. Nie używamy dbt z PATH bo Airflow uruchamia bash bez aktywowanego venv — musimy wskazać dokładnie gdzie jest binarka.
-      #--project-dir — gdzie szukać dbt_project.yml, modeli, testów. Bez tego dbt szukałby w katalogu bieżącym, który w kontekście Airflow jest losowy.
-      #--profiles-dir ~/.dbt — gdzie szukać profiles.yml z danymi do połączenia z bazą (host, port, user, password). Plik jest poza repozytorium bo ma credentials.
-      #--select staging — uruchom tylko modele z folderu staging/. Bez tego dbt budowałby wszystkie modele naraz.
+    )  # wykona /home/mycka/projects/amazon_books_ETL/.venv/bin/dbt run --project-dir /home/mycka/projects/amazon_books_ETL/dbt_project --profiles-dir ~/.dbt --select staging
+    # .venv/bin/dbt — pełna ścieżka do dbt z virtualenv. Nie używamy dbt z PATH bo Airflow uruchamia bash bez aktywowanego venv — musimy wskazać dokładnie gdzie jest binarka.
+    # --project-dir — gdzie szukać dbt_project.yml, modeli, testów. Bez tego dbt szukałby w katalogu bieżącym, który w kontekście Airflow jest losowy.
+    # --profiles-dir ~/.dbt — gdzie szukać profiles.yml z danymi do połączenia z bazą (host, port, user, password). Plik jest poza repozytorium bo ma credentials.
+    # --select staging — uruchom tylko modele z folderu staging/. Bez tego dbt budowałby wszystkie modele naraz.
 
     dbt_intermediate = BashOperator(
         task_id="dbt_intermediate",
@@ -192,7 +203,13 @@ with DAG(
     check_pending_start >> [fetch_from_API, skip_fetch]
     [fetch_from_API, skip_fetch] >> ingest_bronze
     ingest_bronze >> dbt_staging >> [dbt_intermediate, dbt_rejected_books]
-    dbt_intermediate >> dbt_test >> dbt_fct_books_history >> dbt_books_registry >> log_run
+    (
+        dbt_intermediate
+        >> dbt_test
+        >> dbt_fct_books_history
+        >> dbt_books_registry
+        >> log_run
+    )
     dbt_rejected_books >> log_run
     [dbt_books_registry, dbt_rejected_books] >> pipeline_succeeded
     log_run >> pipeline_succeeded

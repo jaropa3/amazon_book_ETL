@@ -1,0 +1,16 @@
+# --- pipeline runtime ---
+requests
+beautifulsoup4
+pandas
+psycopg[binary]
+PyYAML
+python-dotenv
+
+# --- orkiestracja ---
+apache-airflow
+apache-airflow-providers-standard
+apache-airflow-providers-slack
+
+# --- transformacje (uruchamiane przez CLI) ---
+dbt-core
+dbt-postgres

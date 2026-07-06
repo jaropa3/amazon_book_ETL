@@ -32,18 +32,17 @@ def _init_log_schema(cur) -> None:
     """)
 
 
-
-
 def gold_rows_affected(scraped_at: str) -> int:
     try:
-        con = connection_db()
-        with con.cursor() as cur:
-            cur.execute("""
+        with connection_db() as con, con.cursor() as cur:
+            cur.execute(
+                """
                 SELECT COUNT(*) FROM public_marts.fct_books_history
                 WHERE scraped_at = %s
-            """, (scraped_at,))
+            """,
+                (scraped_at,),
+            )
             count = cur.fetchone()[0]
-        con.close()
         return count
     except Exception:
         traceback.print_exc()
@@ -52,9 +51,9 @@ def gold_rows_affected(scraped_at: str) -> int:
 
 def registry_new_rows_count(scraped_at: str) -> int:
     try:
-        con = connection_db()
-        with con.cursor() as cur:
-            cur.execute("""
+        with connection_db() as con, con.cursor() as cur:
+            cur.execute(
+                """
                 SELECT COUNT(DISTINCT asin)
                 FROM public_marts.fct_books_history
                 WHERE scraped_at = %s
@@ -62,9 +61,10 @@ def registry_new_rows_count(scraped_at: str) -> int:
                       SELECT asin FROM public_marts.fct_books_history
                       WHERE scraped_at < %s
                   )
-            """, (scraped_at, scraped_at))
+            """,
+                (scraped_at, scraped_at),
+            )
             count = cur.fetchone()[0]
-        con.close()
         return count
     except Exception:
         traceback.print_exc()
@@ -104,9 +104,12 @@ def upsert_pipeline_run(
     Pojedyncza, wspólna funkcja zamiast osobnego INSERT-u i osobnego UPDATE-u — dwie
     niezależne ścieżki zapisu nieuchronnie tworzyły dwa wiersze dla tego samego runu.
     """
-    status_sql = "status=COALESCE(%s, status)" if overwrite_status else "status=COALESCE(status, %s)"
-    con = connection_db()
-    with con.cursor() as cur:
+    status_sql = (
+        "status=COALESCE(%s, status)"
+        if overwrite_status
+        else "status=COALESCE(status, %s)"
+    )
+    with connection_db() as con, con.cursor() as cur:
         _init_log_schema(cur)
         cur.execute(
             f"""UPDATE logs.pipeline_runs
@@ -120,8 +123,15 @@ def upsert_pipeline_run(
                    duration_seconds=COALESCE(%s, duration_seconds)
                WHERE dag_run_id=%s""",
             (
-                status, run_type, scraped_count, gold_inserted_count, registry_new_count,
-                failed_task, error_message, duration_seconds, dag_run_id,
+                status,
+                run_type,
+                scraped_count,
+                gold_inserted_count,
+                registry_new_count,
+                failed_task,
+                error_message,
+                duration_seconds,
+                dag_run_id,
             ),
         )
         if cur.rowcount == 0:
@@ -131,12 +141,18 @@ def upsert_pipeline_run(
                     registry_new_count, failed_task, error_message, duration_seconds)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
-                    dag_run_id, dag_id, status, run_type, scraped_count, gold_inserted_count,
-                    registry_new_count, failed_task, error_message, duration_seconds,
+                    dag_run_id,
+                    dag_id,
+                    status,
+                    run_type,
+                    scraped_count,
+                    gold_inserted_count,
+                    registry_new_count,
+                    failed_task,
+                    error_message,
+                    duration_seconds,
                 ),
             )
-        con.commit()
-    con.close()
 
 
 def log_run_task(**context) -> None:
@@ -151,7 +167,11 @@ def log_run_task(**context) -> None:
     registry_new_count = registry_new_rows_count(scraped_at) if scraped_at else 0
 
     start = dag_run.start_date
-    duration_seconds = round((datetime.now(timezone.utc) - start).total_seconds(), 1) if start else None
+    duration_seconds = (
+        round((datetime.now(timezone.utc) - start).total_seconds(), 1)
+        if start
+        else None
+    )
 
     upsert_pipeline_run(
         dag_run_id=dag_run.run_id,
