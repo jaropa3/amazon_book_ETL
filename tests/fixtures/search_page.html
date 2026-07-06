@@ -1,0 +1,33 @@
+<!--
+  Syntetyczna atrapa strony wyników Amazona — odwzorowuje strukturę, której
+  szuka parser (div[data-component-type=s-search-result], h2, a href=/e/ASIN,
+  span.a-offscreen, span.a-icon-alt). Nie jest to prawdziwy zrzut Amazona.
+
+  Zawiera celową "pułapkę": linki formatu ('Paperback'/'Kindle Edition')
+  przed linkiem autora, żeby test regresji potwierdził, że parser bierze
+  autora z linku /e/ASIN, a nie z pierwszego lepszego <a>.
+-->
+<html>
+  <body>
+    <div data-component-type="s-search-result" data-asin="B001ABCDEF">
+      <h2><span>Clean Code</span></h2>
+      <div class="format"><a class="a-link-normal" href="/gp/slredirect">Paperback</a></div>
+      <a class="a-link-normal" href="/Robert-Martin/e/B000APG87E">Robert C. Martin</a>
+      <span class="a-price"><span class="a-offscreen">$29.99</span></span>
+      <span class="a-icon-alt">4.7 out of 5 stars</span>
+    </div>
+
+    <div data-component-type="s-search-result" data-asin="B002GHIJKL">
+      <h2><span>The Pragmatic Programmer</span></h2>
+      <a class="a-link-normal" href="/Andrew-Hunt/e/B0034Q4NL2">Andrew Hunt</a>
+      <span class="a-offscreen">$39.99</span>
+      <span class="a-icon-alt">4.8 out of 5 stars</span>
+    </div>
+
+    <div data-component-type="s-search-result" data-asin="B003NOPQRS">
+      <h2><span>Ksiazka bez autora</span></h2>
+      <div class="format"><a class="a-link-normal" href="/gp/bestsellers">Kindle Edition</a></div>
+      <span class="a-offscreen">$0.99</span>
+    </div>
+  </body>
+</html>

@@ -19,7 +19,6 @@ USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
 ]
 
-
 def build_headers():
     return {
         "User-Agent": random.choice(USER_AGENTS),
@@ -27,31 +26,27 @@ def build_headers():
         "Accept-Language": "en-US,en;q=0.9",
     }
 
-
 def _is_challenge_page(response):
     return "bm-verify" in response.text or len(response.content) < 5000
 
-
-def _get_with_retry(
-    url,
-    max_retries=SCRAPER_CFG["max_retries"],
-    backoff_base=SCRAPER_CFG["backoff_base"],
-):
+def _get_with_retry(url, max_retries=SCRAPER_CFG["max_retries"], backoff_base=SCRAPER_CFG["backoff_base"]):
+    response = None
     for attempt in range(max_retries + 1):
-        response = requests.get(url, headers=build_headers())
-        if response.status_code != 503 and not _is_challenge_page(response):
-            return response
+        try:
+            response = requests.get(url, timeout=(5, 30), headers=build_headers())  # (connect=5s, read=30s)
+            if response.status_code != 503 and not _is_challenge_page(response):
+                return response
+            reason = response.status_code if response.status_code == 503 else "challenge"
+        except requests.RequestException as exc:
+            response = None
+            reason = f"błąd sieci ({exc.__class__.__name__})"
 
         if attempt < max_retries:
-            wait = backoff_base**attempt + random.uniform(0, 1)
-            reason = (
-                response.status_code if response.status_code == 503 else "challenge"
-            )
+            wait = backoff_base ** attempt + random.uniform(0, 1)
             print(f"{reason}, retry {attempt + 1}/{max_retries} za {wait:.1f}s")
             time.sleep(wait)
 
     return response
-
 
 def fetched_to_csv(books):
     os.makedirs(RAW_DATA_DIR, exist_ok=True)
@@ -63,6 +58,26 @@ def fetched_to_csv(books):
     df.to_csv(filepath, index=False)
     print(f"zapisano {len(df)} wierszy do {filepath}")
 
+def parse_books(html: bytes | str) -> list[dict]:
+    """Parsuje HTML strony wyników → lista książek. Czysta funkcja: bez sieci i I/O."""
+    soup = BeautifulSoup(html, "html.parser")
+    containers = soup.find_all("div", {"data-component-type": "s-search-result"})
+    books = []
+    for book in containers:
+        title = book.find("h2")
+        author = book.find("a", href=lambda h: h and re.search(r'^/[^/]+/e/[A-Z0-9]{10}', h))
+        price = book.find("span", {"class": "a-offscreen"})
+        rating = book.find("span", {"class": "a-icon-alt"})
+        if title and author:
+            books.append({
+                "asin": book.get("data-asin"),
+                "title": title.get_text(strip=True),
+                "author": author.get_text(strip=True),
+                "price": price.get_text(strip=True) if price else None,
+                "rating": rating.get_text(strip=True) if rating else None,
+            })
+    return books
+
 
 def fetch_books(num_pages=SCRAPER_CFG["num_pages"]):
     base_url = f"{SCRAPER_CFG['base_url']}?k={SCRAPER_CFG['keyword'].replace(' ', '+')}"
@@ -71,36 +86,18 @@ def fetch_books(num_pages=SCRAPER_CFG["num_pages"]):
     for page in range(1, num_pages + 1):
         url = f"{base_url}&page={page}"
         response = _get_with_retry(url)
-        # zapis dokąd?
 
+        if response is None:
+            print(f"strona {page}: brak odpowiedzi po wszystkich próbach (błąd sieci).")
+            continue
         if _is_challenge_page(response):
             print(f"strona {page}: Amazon zablokował zapytanie po wszystkich próbach.")
             continue
-        elif response.status_code != 200:
+        if response.status_code != 200:
             print(f"strona {page}: błąd:", response.status_code)
             continue
 
-        soup = BeautifulSoup(response.content, "html.parser")
-        book_cointainer = soup.find_all(
-            "div", {"data-component-type": "s-search-result"}
-        )
-        for book in book_cointainer:
-            title = book.find("h2")
-            author = book.find(
-                "a", href=lambda h: h and re.search(r"^/[^/]+/e/[A-Z0-9]{10}", h)
-            )
-            price = book.find("span", {"class": "a-offscreen"})
-            rating = book.find("span", {"class": "a-icon-alt"})
-            if title and author:
-                books.append(
-                    {
-                        "asin": book.get("data-asin"),
-                        "title": title.get_text(strip=True),
-                        "author": author.get_text(strip=True),
-                        "price": price.get_text(strip=True) if price else None,
-                        "rating": rating.get_text(strip=True) if rating else None,
-                    }
-                )
+        books.extend(parse_books(response.content))
 
         if page < num_pages:
             delay = SCRAPER_CFG["delay_between_pages"]
@@ -111,26 +108,19 @@ def fetch_books(num_pages=SCRAPER_CFG["num_pages"]):
         fetched_to_csv(books)
         return len(books)
 
-
-def inspect_divs(
-    url: str = None,
-) -> None:  # funkcja wyszukiwania kontenerów <div> na stronie www i pierwsze 300 znaków dla każdego
+def inspect_divs(url: str = None) -> None: # funkcja wyszukiwania kontenerów <div> na stronie www i pierwsze 300 znaków dla każdego
     if url is None:
-        base_url = (
-            f"{SCRAPER_CFG['base_url']}?k={SCRAPER_CFG['keyword'].replace(' ', '+')}"
-        )
+        base_url = f"{SCRAPER_CFG['base_url']}?k={SCRAPER_CFG['keyword'].replace(' ', '+')}"
         url = f"{base_url}&page=1"
     response = _get_with_retry(url)
-    if _is_challenge_page(response):
+    if response is None or _is_challenge_page(response):
         print("Amazon zablokował zapytanie.")
         return
-    soup = BeautifulSoup(response.content, "html.parser")
-    types = sorted(
-        set(
-            div.get("data-component-type")
-            for div in soup.find_all("div", attrs={"data-component-type": True})
-        )
-    )
+    soup = BeautifulSoup(response.content, "html.parser") 
+    types = sorted(set(
+        div.get("data-component-type")
+        for div in soup.find_all("div", attrs={"data-component-type": True})
+    ))
     print(f"Znalezione data-component-type ({len(types)}):")
     for t in types:
         divs = soup.find_all("div", {"data-component-type": t})
@@ -145,8 +135,24 @@ def main():
 if __name__ == "__main__":
     main()
 
-# testowanie kodu przez pytest
-# przepisać to pod AWS i zacząć naukę AWS
+#testowanie kodu przez pytest i ogarnąc github action. więcej testów. co testować ? co powinno być w README ?
+#pydantic ... jak wdrożyć
+# ledger
+# pyproject.toml
+#zbudowac uniwersalny szkeilet przydatny do kazdego projektu. dodać ### zasady do CLAUDE.md
+#dodać daty do precessed. samemu!    
+
+# sprawdzic projekt pod kątem clean code. 
+
+# kreator w przeglądarce. Jak wejdziesz na swoje repo na github.com → zakładka Actions → 
+# GitHub proponuje gotowe szablony i po kliknięciu "Configure" tworzy plik .github/workflows/xxx.yml przez web-edytor i commituje go do repo. 
+# Ale to nadal Ty klikasz — nic nie dzieje się bez Twojej akcji. To samo osiąga się lokalnie, tworząc plik ręcznie i pushując.
+#Czyli: albo tworzysz plik lokalnie (ja mogę, za Twoją zgodą), albo klikasz w kreatorze na github.com. Trzeciej, "samoistnej" drogi nie ma.
+
+
+
+#przepisać to pod AWS i zacząć naukę AWS
 # ogarnąć co to snowflake
-# projekty do porfolio.
-# scraping z hendonmob
+#projekty do porfolio.
+#scraping z hendonmob. napisać samemu
+

@@ -1,5 +1,6 @@
 import os
 import shutil
+from pathlib import Path
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -40,18 +41,16 @@ def _init_schemas(cur) -> None:
     # cur.execute("CREATE SCHEMA IF NOT EXISTS rejected")
 
 
-def ingest_books() -> str:
-    files = sorted(
-        [
-            os.path.join(RAW_DATA_DIR, f)
-            for f in os.listdir(RAW_DATA_DIR)
-            if f.startswith(f"{DB_TABLE}_") and f.endswith(".csv")
-        ]
-    )
+def _pick_oldest_file(raw_dir: Path, table: str) -> Path:
+    """Najstarszy plik {table}_*.csv (FIFO). Fail-fast: wyjątek gdy brak plików."""
+    files = sorted(raw_dir.glob(f"{table}_*.csv"))
     if not files:
-        raise FileNotFoundError(f"Brak plików {DB_TABLE}_*.csv w {RAW_DATA_DIR}")
+        raise FileNotFoundError(f"Brak plików {table}_*.csv w {raw_dir}")
+    return files[0]
 
-    file_to_process = files[0]  # FIFO — najstarszy
+
+def ingest_books() -> str:
+    file_to_process = _pick_oldest_file(Path(RAW_DATA_DIR), DB_TABLE)
     books_raw = pd.read_csv(file_to_process, dtype=str)
 
     with connection_db() as con, con.cursor() as cur:

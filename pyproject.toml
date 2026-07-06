@@ -1,3 +1,8 @@
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.ruff.lint.per-file-ignores]
+# W DAG-ach sys.path.insert MUSI wykonać się przed importami lokalnymi (from main import ...),
+# więc importy nie mogą być na samej górze pliku — E402 jest tu fałszywie pozytywny.
+"airflow/dags/*" = ["E402"]
