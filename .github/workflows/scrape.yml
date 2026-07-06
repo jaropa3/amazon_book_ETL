@@ -1,0 +1,37 @@
+name: scrape
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # co 30 min (UTC!) — jak Airflow DAG
+  workflow_dispatch: {}        # ręczne odpalenie z zakładki Actions
+
+concurrency:
+  group: scrape
+  cancel-in-progress: false    # NIE zabijaj trwającego scrape'u — poczekaj
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      # Scraper potrzebuje tylko tych paczek — NIE instalujemy pełnego
+      # requirements.txt (Airflow + dbt + psycopg), bo runner tylko scrapuje.
+      - name: Install dependencies
+        run: pip install pandas requests beautifulsoup4 pyyaml
+
+      - name: Run scraper
+        run: python main.py
+
+      - name: Upload CSV as artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: books-${{ github.run_id }}
+          path: data/raw_data/*.csv
+          retention-days: 30
