@@ -135,20 +135,17 @@ def main():
 if __name__ == "__main__":
     main()
 
-#testowanie kodu przez pytest i ogarnąc github action. więcej testów. co testować ? co powinno być w README ?
+#napisać kilka testów
 #pydantic ... jak wdrożyć
 # ledger
 # pyproject.toml
-#zbudowac uniwersalny szkeilet przydatny do kazdego projektu. dodać ### zasady do CLAUDE.md
-#dodać daty do precessed. samemu!    
-
-# sprawdzic projekt pod kątem clean code. 
+#zbudowac uniwersalny szkielet przydatny do kazdego projektu. dodać ### zasady do CLAUDE.md
+#dodać daty do processed. samemu!    
 
 # kreator w przeglądarce. Jak wejdziesz na swoje repo na github.com → zakładka Actions → 
 # GitHub proponuje gotowe szablony i po kliknięciu "Configure" tworzy plik .github/workflows/xxx.yml przez web-edytor i commituje go do repo. 
 # Ale to nadal Ty klikasz — nic nie dzieje się bez Twojej akcji. To samo osiąga się lokalnie, tworząc plik ręcznie i pushując.
 #Czyli: albo tworzysz plik lokalnie (ja mogę, za Twoją zgodą), albo klikasz w kreatorze na github.com. Trzeciej, "samoistnej" drogi nie ma.
-
 
 
 #przepisać to pod AWS i zacząć naukę AWS
