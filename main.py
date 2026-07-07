@@ -139,14 +139,15 @@ if __name__ == "__main__":
 #pydantic ... jak wdrożyć
 # ledger
 # pyproject.toml
-#zbudowac uniwersalny szkielet przydatny do kazdego projektu. dodać ### zasady do CLAUDE.md
+#zbudowac uniwersalny szkielet przydatny do kazdego projektu. dodać
 #dodać daty do processed. samemu!    
 
 # kreator w przeglądarce. Jak wejdziesz na swoje repo na github.com → zakładka Actions → 
 # GitHub proponuje gotowe szablony i po kliknięciu "Configure" tworzy plik .github/workflows/xxx.yml przez web-edytor i commituje go do repo. 
 # Ale to nadal Ty klikasz — nic nie dzieje się bez Twojej akcji. To samo osiąga się lokalnie, tworząc plik ręcznie i pushując.
-#Czyli: albo tworzysz plik lokalnie (ja mogę, za Twoją zgodą), albo klikasz w kreatorze na github.com. Trzeciej, "samoistnej" drogi nie ma.
+#Czyli: albo tworzysz plik lokalnie, albo klikasz w kreatorze na github.com. 
 
+#zapis pobranych cvs automatycznie do buketa na AWS
 
 #przepisać to pod AWS i zacząć naukę AWS
 # ogarnąć co to snowflake

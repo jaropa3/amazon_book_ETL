@@ -1,5 +1,6 @@
 import os
 import shutil
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -58,11 +59,12 @@ def ingest_books() -> str:
         _insert(cur, DB_SCHEMA, DB_TABLE, books_raw)
     print(f"{DB_SCHEMA}.{DB_TABLE}: {len(books_raw)} wierszy z {file_to_process}")
 
-    processed_dir = os.path.join(RAW_DATA_DIR, "processed")
+    processed_day = datetime.now().strftime("%Y-%m-%d")
+    processed_dir = os.path.join(RAW_DATA_DIR, "processed", processed_day)
     os.makedirs(processed_dir, exist_ok=True)
     shutil.move(
         file_to_process, os.path.join(processed_dir, os.path.basename(file_to_process))
     )
-    print(f"przeniesiono {os.path.basename(file_to_process)} → processed/")
+    print(f"przeniesiono {os.path.basename(file_to_process)} → processed/{processed_day}/")
 
     return books_raw["scraped_at"].iloc[0]  # scraped_at tej sesji → XCom
