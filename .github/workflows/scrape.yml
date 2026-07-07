@@ -2,7 +2,7 @@ name: scrape
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # co 30 min (UTC!) — jak Airflow DAG
+    - cron: "*/10 * * * *"   # co 30 min (UTC!) — jak Airflow DAG
   workflow_dispatch: {}        # ręczne odpalenie z zakładki Actions
 
 concurrency:
