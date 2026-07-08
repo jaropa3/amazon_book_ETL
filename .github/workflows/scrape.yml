@@ -1,38 +1,38 @@
-name: scrape
+# name: scrape
 
-on:
-  schedule:
-    - cron: "*/10 * * * *"   # co 30 min (UTC!) — jak Airflow DAG
-  workflow_dispatch: {}        # ręczne odpalenie z zakładki Actions
+# on:
+#   schedule:
+#     - cron: "*/10 * * * *"   # co 30 min (UTC!) — jak Airflow DAG
+#   workflow_dispatch: {}        # ręczne odpalenie z zakładki Actions
 
-concurrency:
-  group: scrape
-  cancel-in-progress: false    # NIE zabijaj trwającego scrape'u — poczekaj
+# concurrency:
+#   group: scrape
+#   cancel-in-progress: false    # NIE zabijaj trwającego scrape'u — poczekaj
 
-jobs:
-  scrape:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
+# jobs:
+#   scrape:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: requirements-scrape.txt
+#       - uses: actions/setup-python@v6
+#         with:
+#           python-version: "3.14"
+#           cache: pip
+#           cache-dependency-path: requirements-scrape.txt
 
-      # Tylko zależności scrapera — NIE pełny requirements.txt
-      # (Airflow + dbt + psycopg zbędne, runner tylko scrapuje).
-      - name: Install dependencies
-        run: pip install -r requirements-scrape.txt
+#       # Tylko zależności scrapera — NIE pełny requirements.txt
+#       # (Airflow + dbt + psycopg zbędne, runner tylko scrapuje).
+#       - name: Install dependencies
+#         run: pip install -r requirements-scrape.txt
 
-      - name: Run scraper
-        run: python main.py
+#       - name: Run scraper
+#         run: python main.py
 
-      - name: Upload CSV as artifact
-        if: success()
-        uses: actions/upload-artifact@v7
-        with:
-          name: books-${{ github.run_id }}
-          path: data/raw_data/*.csv
-          retention-days: 30
+#       - name: Upload CSV as artifact
+#         if: success()
+#         uses: actions/upload-artifact@v7
+#         with:
+#           name: books-${{ github.run_id }}
+#           path: data/raw_data/*.csv
+#           retention-days: 30

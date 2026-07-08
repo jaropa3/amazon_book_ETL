@@ -17,20 +17,20 @@ python main.py
 
 **dbt — run all layers:**
 ```bash
-dbt --project-dir dbt_project --profiles-dir ~/.dbt run
-dbt --project-dir dbt_project --profiles-dir ~/.dbt test
+dbt run --project-dir dbt_project --profiles-dir ~/.dbt
+dbt test --project-dir dbt_project --profiles-dir ~/.dbt
 ```
 
 **dbt — single layer:**
 ```bash
-dbt --project-dir dbt_project --profiles-dir ~/.dbt run --select staging
-dbt --project-dir dbt_project --profiles-dir ~/.dbt run --select intermediate
-dbt --project-dir dbt_project --profiles-dir ~/.dbt run --select gold
+dbt run --project-dir dbt_project --profiles-dir ~/.dbt --select staging
+dbt run --project-dir dbt_project --profiles-dir ~/.dbt --select intermediate
+dbt run --project-dir dbt_project --profiles-dir ~/.dbt --select marts
 ```
 
 **dbt — pełne przebudowanie modelu incremental (np. po zmianie schematu gold):**
 ```bash
-dbt --project-dir dbt_project --profiles-dir ~/.dbt run --full-refresh --select fct_books_history
+dbt run --project-dir dbt_project --profiles-dir ~/.dbt --full-refresh --select fct_books_history
 ```
 
 **Airflow (uruchomienie lokalne):**
@@ -107,22 +107,32 @@ Testy są w dwóch miejscach:
   - `assert_gold_price_positive.sql`, `assert_gold_rating_max_5.sql`
   - `assert_int_books_unique_per_session.sql` — unikalność `(asin, scraped_at)` w `int_books`
 
-### Zasady
+### Rules
 - jest to projekt do nauki, ale chce żeby się nadawał na produkcje i do pokazania seniorowi DE.
 - zawsze zapytaj zanim coś faktycznie zmienisz w kodzie.
 - sprawdzaj reguły clean code (nie zmieniaj sam, tylko podpowiadaj)
   - DRY
-  - Funkcja robi jedną rzecz (Single Responsibility)
-  - Linter — 'ruff'.
-  - podpowiadaj mi o ruff check, uv i pytest co jakis czas.
+  - Funkcja robi jedną rzecz (Single Responsibility).
   - Type hints.
   - logging zamiast print.
   - Errors should never pass silently — logowanie i wyjątki zamiast `except: pass`.
-  - Fail Fast** — program zgłasza błąd od razu (walidacja na wejściu), nie po godzinie liczenia; guard clauses to mikro-wersja tej zasady.
-  - Single Source of Truth — jedna informacja zdefiniowana w jednym miejscu: `DATABASE_URL` nie występuje w 15 plikach (→ config), definicja metryki w jednym modelu dbt 
+  - Fail Fast — program zgłasza błąd od razu (walidacja na wejściu), nie po godzinie liczenia; guard clauses to mikro-wersja tej zasady.
+  - Single Source of Truth — jedna informacja zdefiniowana w jednym miejscu: np. `DATABASE_URL` nie występuje w 15 plikach (→ config), definicja metryki w jednym modelu dbt 
   - Convention over Configuration — ustalone konwencje (`tests/`, `src/`, `__init__.py`) zamiast setek opcji; dlatego wszystkie projekty pythonowe wyglądają podobnie.
   - Nazwy opisują przeznaczenie: zmienne rzeczownikami (`user_name`), funkcje czasownikami (`load_data()`, nie `data()`).
   - snake_case dla funkcji/zmiennych/plików, **PascalCase** dla klas, **UPPER_CASE** dla stałych.
   - pathlib.Path zamiast ścieżek-stringów.
   - Konfiguracja poza kodem (env/.env/Secret Manager — nigdy hasło w źródle).
+  - Walidacja konfiguracji na starcie. walidacja przez schemat, przez Pydantic
   - i inne kluczowe reguły.
+- Pilnuj architektury projektu. A jeśli projekt jest świeży to podpowiedz mi żeby stworzyć to czego brakuje poniżej
+  - .github/workflows
+  - Linter — 'ruff'.
+  - podpowiadaj mi o ruff check, uv i pytest co jakis czas.
+  - .env
+  - README.md
+  - docs/architecture.md. Tu jest pokazany przepływ w całym projekcie
+  - pyproject.toml
+  - scripts/ miejsce na bashe
+  - requirement.txt
+  - w data/ rozdzieli foldery na pliki przetworzone (processed) i nie przetworzone

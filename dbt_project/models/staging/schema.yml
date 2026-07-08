@@ -6,3 +6,14 @@ models:
       - name: asin
         tests:
           - not_null
+      - name: scraped_at
+        tests:
+          - not_null
+      - name: title
+        tests:
+          - not_null
+      - name: author
+        tests:
+          - not_null:
+              config:
+                severity: warn

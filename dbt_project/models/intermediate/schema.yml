@@ -6,9 +6,25 @@ models:
       - name: asin
         tests:
           - not_null
+      - name: scraped_at
+        tests:
+          - not_null
+      - name: title
+        tests:
+          - not_null
+      - name: author
+        tests:
+          - not_null:
+              config:
+                severity: warn
 
   - name: rejected_books
     columns:
       - name: rejection_reason
         tests:
           - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - 'brak asin'
+                  - 'duplikat w sesji (asin+scraped_at)'

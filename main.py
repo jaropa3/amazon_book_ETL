@@ -134,22 +134,16 @@ def main():
 
 if __name__ == "__main__":
     main()
-
+    
+# zawsze na początek sprawdzaj to co zrobiłeś wczoraj
+# bash do czyszczenia dysku windows
 #napisać kilka testów
 #pydantic ... jak wdrożyć
 # ledger
-# pyproject.toml
-#zbudowac uniwersalny szkielet przydatny do kazdego projektu. dodać
-#dodać daty do processed. samemu!    
-
-# kreator w przeglądarce. Jak wejdziesz na swoje repo na github.com → zakładka Actions → 
-# GitHub proponuje gotowe szablony i po kliknięciu "Configure" tworzy plik .github/workflows/xxx.yml przez web-edytor i commituje go do repo. 
-# Ale to nadal Ty klikasz — nic nie dzieje się bez Twojej akcji. To samo osiąga się lokalnie, tworząc plik ręcznie i pushując.
-#Czyli: albo tworzysz plik lokalnie, albo klikasz w kreatorze na github.com. 
-
+# Kurs programowania w Pythonie z Linuksem, część 3
 #zapis pobranych cvs automatycznie do buketa na AWS
-
 #przepisać to pod AWS i zacząć naukę AWS
+
 # ogarnąć co to snowflake
 #projekty do porfolio.
 #scraping z hendonmob. napisać samemu
