@@ -1,58 +1,57 @@
-"""Walidacja konfiguracji (fail-fast).
+"""Walidacja konfiguracji przez Pydantic.
 
-config._validate zgłasza brakujące klucze od razu przy wczytaniu — zamiast pozwolić,
-by zły config.yaml wybuchł godzinę później jako mętny KeyError w środku pipeline'u.
+Zły config.yaml (brak klucza, ujemny num_pages, zły typ) jest odrzucany od razu
+przy wczytaniu — ValidationError zamiast mętnego błędu godzinę później w pipeline.
 """
 
 import pytest
+from pydantic import ValidationError
 
-from config import CONFIG, REQUIRED_KEYS, _validate
-
-
-def _resolve(cfg: dict, path: tuple[str, ...]):
-    node = cfg
-    for key in path:
-        node = node[key]
-    return node
+from config import CONFIG, Config
 
 
-@pytest.mark.parametrize("path", REQUIRED_KEYS, ids=lambda p: ".".join(p))
-def test_config_ma_wymagany_klucz(path):
-    assert _resolve(CONFIG, path) is not None
-
-
-def test_validate_przepuszcza_poprawny_config():
-    _validate(CONFIG)  # realny config — nie powinno rzucić
-
-
-def test_validate_zglasza_brak_kluczy():
-    broken = {"scraper": {"base_url": "x"}}  # brakuje prawie wszystkiego
-    with pytest.raises(ValueError):
-        _validate(broken)
-
-
-def test_validate_komunikat_wskazuje_brakujacy_klucz():
-    broken = {
+def _valid_dict() -> dict:
+    """Kompletny, poprawny słownik konfiguracji — baza do psucia w testach."""
+    return {
         "scraper": {
-            "base_url": "x",
+            "base_url": "https://x",
             "keyword": "y",
-            "num_pages": 1,
-            "max_retries": 1,
+            "num_pages": 5,
+            "max_retries": 3,
             "backoff_base": 2,
-            "delay_between_pages": {"min": 1, "max": 2},
+            "delay_between_pages": {"min": 1, "max": 4},
         },
-        "storage": {"raw_data_dir": "d"},
-        "database": {"schema": "s"},  # brak database.table
+        "storage": {"raw_data_dir": "data/raw_data"},
+        "database": {"schema": "bronze", "table": "books"},
     }
-    with pytest.raises(ValueError, match="database.table"):
-        _validate(broken)
 
 
-def test_config_wartosci_numeryczne_maja_wlasciwy_typ():
-    # kod robi range(num_pages + 1) i backoff_base ** attempt — typy muszą się zgadzać
-    scraper = CONFIG["scraper"]
-    assert isinstance(scraper["num_pages"], int)
-    assert isinstance(scraper["max_retries"], int)
-    assert isinstance(scraper["backoff_base"], (int, float))
-    assert isinstance(scraper["delay_between_pages"]["min"], (int, float))
-    assert isinstance(scraper["delay_between_pages"]["max"], (int, float))
+def test_realny_config_ma_kluczowe_pola():
+    assert CONFIG.scraper.base_url
+    assert CONFIG.database.db_schema      # alias: w YAML "schema"
+    assert CONFIG.storage.raw_data_dir
+
+
+def test_poprawny_dict_przechodzi():
+    Config(**_valid_dict())  # nie powinno rzucić
+
+
+def test_odrzuca_brak_klucza():
+    dane = _valid_dict()
+    del dane["database"]["table"]
+    with pytest.raises(ValidationError):
+        Config(**dane)
+
+
+def test_odrzuca_ujemne_num_pages():
+    dane = _valid_dict()
+    dane["scraper"]["num_pages"] = -1  # Field(gt=0)
+    with pytest.raises(ValidationError):
+        Config(**dane)
+
+
+def test_odrzuca_zly_typ_num_pages():
+    dane = _valid_dict()
+    dane["scraper"]["num_pages"] = "pięć"  # nie da się skonwertować na int
+    with pytest.raises(ValidationError):
+        Config(**dane)

@@ -21,7 +21,7 @@ from airflow.providers.standard.operators.python import (
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.task.trigger_rule import TriggerRule
 from airflow.providers.slack.notifications.slack_webhook import SlackWebhookNotifier
-from airflow.utils.context import Context
+from airflow.sdk.definitions.context import Context
 from main import fetch_books
 from ingest import ingest_books, RAW_DATA_DIR, DB_TABLE
 from connection import connection_db

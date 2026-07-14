@@ -57,6 +57,12 @@ database:
 
 **3. Profil dbt** — `~/.dbt/profiles.yml` (poza repozytorium).
 
+**4. Schemat bazy** — postaw schemat i tabelę bronze **przed pierwszym runem** (DDL żyje poza pipeline'em, w [sql/schema.sql](sql/schema.sql); komenda idempotentna, uruchom raz):
+
+```bash
+python scripts/init_db.py
+```
+
 ## Uruchomienie
 
 ```bash
@@ -90,6 +96,16 @@ pytest            # albo: pytest -v
 Testy uruchamiają się **automatycznie po każdym push i pull requeście** przez GitHub Actions
 ([.github/workflows/tests.yml](.github/workflows/tests.yml)). Testy danych (jakość) są osobno,
 w warstwie dbt (`dbt test`) i odpalają się w każdym runie pipeline'u.
+
+## Decisions & trade-offs
+
+- **DDL poza pipeline'em ([sql/schema.sql](sql/schema.sql) + [scripts/init_db.py](scripts/init_db.py)), nie w `ingest.py`.** Schemat bronze jest stabilny i znany downstreamowi (dbt), więc definicja tabeli żyje w jednym miejscu i jest stawiana raz — a nie odtwarzana przez `ALTER TABLE ... ADD COLUMN` przy każdym runie. Zysk: nieznana kolumna w CSV pada od razu (Fail Fast) zamiast po cichu rozjechać kontrakt z dbt. Koszt: trzeba pamiętać o kroku standupu po `git clone` (punkt 4 w Konfiguracji).
+- **Jeden `schema.sql`, bez narzędzia migracyjnego (Alembic/yoyo).** Przy jednej stabilnej tabeli narzędzie migracyjne to narzut bez zysku (ang. YAGNI). Świadomie odłożone do chwili, gdy schemat zacznie ewoluować na żywej bazie albo dojdzie wiele tabel/środowisk — wtedy `schema.sql` staje się `sql/migrations/0001_init.sql` + runner z tabelą `schema_migrations`.
+
+### Co bym poprawił
+
+- **`COPY` zamiast `executemany`** w `ingest.py` — szybszy bulk load.
+- **`csv → parquet`** w warstwie raw (format kolumnowy, mniejszy skan).
 
 ## Dokumentacja
 

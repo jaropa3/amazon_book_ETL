@@ -1,8 +1,11 @@
-"""Testy wyboru pliku FIFO — bez bazy danych, na tymczasowym katalogu pytest."""
+"""Testy ingest — wybór pliku FIFO i brak DDL w _insert. Bez bazy: mock kursora."""
 
+from unittest.mock import MagicMock
+
+import pandas as pd
 import pytest
 
-from ingest import _pick_oldest_file
+from ingest import _insert, _pick_oldest_file
 
 
 def test_fifo_wybiera_najstarszy(tmp_path):
@@ -28,3 +31,28 @@ def test_fifo_ignoruje_obce_pliki(tmp_path):
 def test_brak_plikow_zglasza_wyjatek(tmp_path):
     with pytest.raises(FileNotFoundError):
         _pick_oldest_file(tmp_path, "books")
+
+
+def test_insert_przeladowuje_dane_przez_copy_bez_ddl():
+    """_insert dotyka tylko DANYCH (TRUNCATE + COPY) — struktura żyje w sql/schema.sql.
+
+    Regresja (ang. mutation guard): gdyby ktoś przywrócił CREATE/ALTER TABLE do
+    pipeline'u albo wrócił do INSERT po wierszu (executemany) zamiast bulk COPY,
+    ten test pada.
+    """
+    cur = MagicMock()
+    df = pd.DataFrame({"asin": ["A1", "A2"], "title": ["Book", "Book2"]})
+
+    _insert(cur, "bronze", "books", df)
+
+    executed = " ".join(str(call.args[0]).upper() for call in cur.execute.call_args_list)
+    assert "TRUNCATE" in executed
+    assert "CREATE TABLE" not in executed
+    assert "ALTER TABLE" not in executed
+    # bulk load przez COPY, nie INSERT po wierszu
+    cur.executemany.assert_not_called()
+    cur.copy.assert_called_once()
+    assert "COPY" in cur.copy.call_args.args[0].upper()
+    # jeden write_row na wiersz DataFrame
+    copy_writer = cur.copy.return_value.__enter__.return_value
+    assert copy_writer.write_row.call_count == len(df)

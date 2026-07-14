@@ -2,7 +2,7 @@ import os
 import re
 import random
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
@@ -11,8 +11,8 @@ from logger import setup_logger
 
 logger = setup_logger("Amazon_books_ETL")
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
-RAW_DATA_DIR = os.path.join(PROJECT_DIR, CONFIG["storage"]["raw_data_dir"])
-SCRAPER_CFG = CONFIG["scraper"]
+RAW_DATA_DIR = os.path.join(PROJECT_DIR, CONFIG.storage.raw_data_dir)
+SCRAPER_CFG = CONFIG.scraper
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -44,7 +44,7 @@ def _retry_wait(response: requests.Response | None, attempt: int, backoff_base: 
             return float(retry_after)
     return backoff_base ** attempt + random.uniform(0, 1)
 
-def _get_with_retry(url: str, max_retries: int = SCRAPER_CFG["max_retries"], backoff_base: float = SCRAPER_CFG["backoff_base"]) -> requests.Response | None:
+def _get_with_retry(url: str, max_retries: int = SCRAPER_CFG.max_retries, backoff_base: float = SCRAPER_CFG.backoff_base) -> requests.Response | None:
     response = None
     for attempt in range(max_retries + 1):
         try:
@@ -65,7 +65,7 @@ def _get_with_retry(url: str, max_retries: int = SCRAPER_CFG["max_retries"], bac
 
 def fetched_to_csv(books: list[dict]) -> None:
     os.makedirs(RAW_DATA_DIR, exist_ok=True)
-    scraped_at = datetime.now()
+    scraped_at = datetime.now(timezone.utc)  # UTC-aware — isoformat() dokłada offset +00:00
     timestamp = scraped_at.strftime("%Y%m%d_%H%M%S")
     filepath = os.path.join(RAW_DATA_DIR, f"books_{timestamp}.csv")
     df = pd.DataFrame(books)
@@ -94,8 +94,8 @@ def parse_books(html: bytes | str) -> list[dict]:
     return books
 
 
-def fetch_books(num_pages: int = SCRAPER_CFG["num_pages"]) -> int:
-    base_url = f"{SCRAPER_CFG['base_url']}?k={SCRAPER_CFG['keyword'].replace(' ', '+')}"
+def fetch_books(num_pages: int = SCRAPER_CFG.num_pages) -> int:
+    base_url = f"{SCRAPER_CFG.base_url}?k={SCRAPER_CFG.keyword.replace(' ', '+')}"
     books = []
 
     for page in range(1, num_pages + 1):
@@ -116,33 +116,13 @@ def fetch_books(num_pages: int = SCRAPER_CFG["num_pages"]) -> int:
         books.extend(parse_books(response.content))
 
         if page < num_pages:
-            delay = SCRAPER_CFG["delay_between_pages"]
-            time.sleep(random.uniform(delay["min"], delay["max"]))
+            delay = SCRAPER_CFG.delay_between_pages
+            time.sleep(random.uniform(delay.min, delay.max))
     if len(books) < 1:
         raise RuntimeError("Nie udało się zebrać żadnych danych z Amazona.")
     else:
         fetched_to_csv(books)
         return len(books)
-
-# def inspect_divs(url: str | None = None) -> None: # funkcja wyszukiwania kontenerów <div> na stronie www i pierwsze 300 znaków dla każdego
-#     if url is None:
-#         base_url = f"{SCRAPER_CFG['base_url']}?k={SCRAPER_CFG['keyword'].replace(' ', '+')}"
-#         url = f"{base_url}&page=1"
-#     response = _get_with_retry(url)
-#     if response is None or _is_challenge_page(response):
-#         print("Amazon zablokował zapytanie.")
-#         return
-#     soup = BeautifulSoup(response.content, "html.parser") 
-#     types = sorted(set(
-#         div.get("data-component-type")
-#         for div in soup.find_all("div", attrs={"data-component-type": True})
-#     ))
-#     print(f"Znalezione data-component-type ({len(types)}):")
-#     for t in types:
-#         divs = soup.find_all("div", {"data-component-type": t})
-#         print(f"\n  {len(divs):3}x  [{t}]")
-#         print(f"       {str(divs[0])[:300]}...")
-
 
 def main() -> None:
     fetch_books()

@@ -6,7 +6,7 @@ select
     title,
     author,
     price,
-    scraped_at::timestamp as scraped_at,
+    scraped_at::timestamptz as scraped_at,
     'brak asin' as rejection_reason
 from {{ source('bronze', 'books') }}
 where asin is null

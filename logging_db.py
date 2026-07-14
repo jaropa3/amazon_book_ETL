@@ -3,7 +3,6 @@ import traceback
 from datetime import datetime, timezone
 from typing import Any
 
-import psycopg
 from dotenv import load_dotenv
 
 from connection import connection_db
@@ -13,26 +12,6 @@ PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(PROJECT_DIR, ".env"), encoding="utf-8-sig")
 
 BACKLOG_BRANCH = "skip_fetch"
-
-
-def _init_log_schema(cur: psycopg.Cursor) -> None:
-    cur.execute("CREATE SCHEMA IF NOT EXISTS logs")
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS logs.pipeline_runs (
-            run_id                SERIAL PRIMARY KEY,
-            run_at                TIMESTAMP NOT NULL DEFAULT now(),
-            dag_run_id            TEXT,
-            dag_id                TEXT,
-            status                TEXT,
-            run_type              TEXT,
-            scraped_count         INT,
-            gold_inserted_count   INT,
-            registry_new_count    INT,
-            failed_task           TEXT,
-            error_message         TEXT,
-            duration_seconds      NUMERIC
-        )
-    """)
 
 
 def gold_rows_affected(scraped_at: str) -> int:
@@ -113,7 +92,6 @@ def upsert_pipeline_run(
         else "status=COALESCE(status, %s)"
     )
     with connection_db() as con, con.cursor() as cur:
-        _init_log_schema(cur)
         cur.execute(
             f"""UPDATE logs.pipeline_runs
                SET {status_sql},

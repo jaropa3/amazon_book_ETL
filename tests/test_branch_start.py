@@ -9,7 +9,7 @@ from config import CONFIG
 
 
 def branch_start():
-    DATA_PATH = Path(CONFIG["storage"]["raw_data_dir"])
+    DATA_PATH = Path(CONFIG.storage.raw_data_dir)
     file = list(DATA_PATH.glob("books_*.csv"))
     return file
 

@@ -78,6 +78,7 @@ Amazon.com → main.py (scraper) → data/raw_data/books_YYYYMMDD_HHMMSS.csv
 - `config.yaml` — parametry scrapera (URL, keyword, liczba stron, retry), ścieżki, schemat/tabela w DB. Ładowany przez `config.py` jako dict `CONFIG`.
 - `.env` — dane do połączenia z PostgreSQL (`POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`). Baza działa w Dockerze, host `host.docker.internal`.
 - `~/.dbt/profiles.yml` — profil dbt (poza repozytorium).
+- `sql/schema.sql` — DDL całej bazy: `bronze.books` (dane, kolumny TEXT) + `logs.pipeline_runs` (rejestr runów). Uruchamiane **raz** przez `scripts/init_db.py` przy standupie bazy — poza pipeline'em. `ingest.py` robi tylko `TRUNCATE`+`INSERT`, `logging_db.py` tylko UPSERT; struktury nie tworzą, zakładają że istnieje (nieznana kolumna → Fail Fast).
 
 ### Airflow DAG
 
@@ -111,7 +112,7 @@ Testy są w dwóch miejscach:
 - na początku każdej sesji przypominaj o pliku NOTEBOOK.md
 - jest to projekt do nauki, ale chce żeby się nadawał na produkcje i do pokazania seniorowi DE.
   - bierz pod uwagą najnowsze koncepty data engineeringu i stacka pod oferty pracy w 2026. 
-- chce się uczyć angielskiego. Dodawaj w nawiasach kluczowe słowa, metody, funkcje lub koncepcy po angielsku (ang. TEKST)
+- uczę się angielskiego. Dodawaj w nawiasach kluczowe słowa, metody, funkcje lub koncepcy po angielsku (ang. TEKST). Zależy mi na tym !!!
 - zawsze zapytaj zanim coś faktycznie zmienisz w kodzie.
 - sprawdzaj reguły clean code (nie zmieniaj sam, tylko podpowiadaj)
   - DRY
@@ -163,7 +164,7 @@ Testy są w dwóch miejscach:
   - dedup po kluczu biznesowym / hashu payloadu, nie `drop_duplicates()` po całych wierszach
   - czas przechowuj w UTC jako `TIMESTAMPTZ`; konwersja na strefę dopiero przy prezentacji
   - bulk load przez `COPY`, nie `INSERT` po wierszu; staging bez indeksów i constraintów
-  - DDL (schemat) żyje w migracjach, nie w pipelinie — `CREATE TABLE IF NOT EXISTS` w każdym runie to zapach  
+  - DDL (schemat) żyje w migracjach, nie w pipelinie — `CREATE TABLE IF NOT EXISTS` w każdym runie to zapach niedojrzałości. Doc
   - gdy tabela ma downstream (widoki): przeładowuj dane (`TRUNCATE`+`INSERT`), nie strukturę (`DROP`+`CREATE`)
   - surrogate key jako PK; unikalność biznesową wymuszaj osobnym `UNIQUE` 
 - Storage, chmura, koszty
