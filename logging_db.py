@@ -1,10 +1,13 @@
 import os
 import traceback
 from datetime import datetime, timezone
+from typing import Any
 
+import psycopg
 from dotenv import load_dotenv
 
 from connection import connection_db
+from logger import setup_logger
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(PROJECT_DIR, ".env"), encoding="utf-8-sig")
@@ -12,7 +15,7 @@ load_dotenv(os.path.join(PROJECT_DIR, ".env"), encoding="utf-8-sig")
 BACKLOG_BRANCH = "skip_fetch"
 
 
-def _init_log_schema(cur) -> None:
+def _init_log_schema(cur: psycopg.Cursor) -> None:
     cur.execute("CREATE SCHEMA IF NOT EXISTS logs")
     cur.execute("""
         CREATE TABLE IF NOT EXISTS logs.pipeline_runs (
@@ -74,14 +77,14 @@ def registry_new_rows_count(scraped_at: str) -> int:
 def upsert_pipeline_run(
     dag_run_id: str,
     dag_id: str,
-    status: str = None,
-    run_type: str = None,
-    scraped_count: int = None,
-    gold_inserted_count: int = None,
-    registry_new_count: int = None,
-    failed_task: str = None,
-    error_message: str = None,
-    duration_seconds: float = None,
+    status: str | None = None,
+    run_type: str | None = None,
+    scraped_count: int | None = None,
+    gold_inserted_count: int | None = None,
+    registry_new_count: int | None = None,
+    failed_task: str | None = None,
+    error_message: str | None = None,
+    duration_seconds: float | None = None,
     overwrite_status: bool = True,
 ) -> None:
     """Jedyny writer do logs.pipeline_runs — UPSERT po dag_run_id.
@@ -155,7 +158,7 @@ def upsert_pipeline_run(
             )
 
 
-def log_run_task(**context) -> None:
+def log_run_task(**context: Any) -> None:
     ti = context["ti"]
     dag_run = context["dag_run"]
 
@@ -184,3 +187,35 @@ def log_run_task(**context) -> None:
         duration_seconds=duration_seconds,
         overwrite_status=False,
     )
+
+
+def append_run_summary(dag_run_id: str) -> None:
+    """Dopisuje podsumowanie runu do logs/pipeline_runs.log (trwały rejestr na dysku).
+
+    Źródłem jest gotowy wiersz z logs.pipeline_runs (SSOT) — dokładnie te dane, które trafiają
+    do tabeli i do Slacka. Nic nie liczymy ponownie; plik to tylko dodatkowy sink. Wołane z
+    callbacków sukcesu i porażki, po sfinalizowaniu `status` w tabeli.
+    """
+    with connection_db() as con, con.cursor() as cur:
+        cur.execute(
+            """SELECT status, run_type, scraped_count, gold_inserted_count,
+                      registry_new_count, duration_seconds, failed_task, error_message
+               FROM logs.pipeline_runs WHERE dag_run_id = %s""",
+            (dag_run_id,),
+        )
+        row = cur.fetchone()
+
+    if row is None:
+        return
+
+    status, run_type, scraped, gold, registry, duration, failed_task, error = row
+    summary = (
+        f"run={dag_run_id} | status={status} | type={run_type} | "
+        f"scraped={scraped} | gold={gold} | registry={registry} | duration={duration}s"
+    )
+    if failed_task:
+        summary += f" | failed_task={failed_task} | error={error}"
+
+    # logger o nazwie "pipeline_runs" → linia trafia do wspólnego dziennego etl_<data>.log
+    # (obok szczegółów przebiegu); grep "| pipeline_runs |" wyciąga same podsumowania.
+    setup_logger("pipeline_runs").info(summary)

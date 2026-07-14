@@ -4,11 +4,14 @@ from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+import psycopg
 from dotenv import load_dotenv
 
 from config import CONFIG
 from connection import connection_db
+from logger import setup_logger
 
+logger = setup_logger("ingest")
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(PROJECT_DIR, ".env"), encoding="utf-8-sig")
 
@@ -17,7 +20,7 @@ DB_SCHEMA = CONFIG["database"]["schema"]
 DB_TABLE = CONFIG["database"]["table"]
 
 
-def _insert(cur, schema: str, table: str, df: pd.DataFrame) -> None:
+def _insert(cur: psycopg.Cursor, schema: str, table: str, df: pd.DataFrame) -> None:
     cur.execute(f"CREATE TABLE IF NOT EXISTS {schema}.{table} ()")
     for col in df.columns:
         cur.execute(
@@ -37,7 +40,7 @@ def _insert(cur, schema: str, table: str, df: pd.DataFrame) -> None:
     )
 
 
-def _init_schemas(cur) -> None:
+def _init_schemas(cur: psycopg.Cursor) -> None:
     cur.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
     # cur.execute("CREATE SCHEMA IF NOT EXISTS rejected")
 
@@ -57,7 +60,7 @@ def ingest_books() -> str:
     with connection_db() as con, con.cursor() as cur:
         _init_schemas(cur)
         _insert(cur, DB_SCHEMA, DB_TABLE, books_raw)
-    print(f"{DB_SCHEMA}.{DB_TABLE}: {len(books_raw)} wierszy z {file_to_process}")
+    logger.info("%s.%s: %d wierszy z %s", DB_SCHEMA, DB_TABLE, len(books_raw), file_to_process)
 
     processed_day = datetime.now().strftime("%Y-%m-%d")
     processed_dir = os.path.join(RAW_DATA_DIR, "processed", processed_day)
@@ -65,6 +68,6 @@ def ingest_books() -> str:
     shutil.move(
         file_to_process, os.path.join(processed_dir, os.path.basename(file_to_process))
     )
-    print(f"przeniesiono {os.path.basename(file_to_process)} → processed/{processed_day}/")
+    logger.info("przeniesiono %s → processed/%s/", os.path.basename(file_to_process), processed_day)
 
     return books_raw["scraped_at"].iloc[0]  # scraped_at tej sesji → XCom

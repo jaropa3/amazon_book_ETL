@@ -7,7 +7,9 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from config import CONFIG
+from logger import setup_logger
 
+logger = setup_logger("Amazon_books_ETL")
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 RAW_DATA_DIR = os.path.join(PROJECT_DIR, CONFIG["storage"]["raw_data_dir"])
 SCRAPER_CFG = CONFIG["scraper"]
@@ -19,36 +21,49 @@ USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
 ]
 
-def build_headers():
+def build_headers() -> dict[str, str]:
     return {
         "User-Agent": random.choice(USER_AGENTS),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
     }
 
-def _is_challenge_page(response):
+def _is_challenge_page(response: requests.Response) -> bool:
     return "bm-verify" in response.text or len(response.content) < 5000
 
-def _get_with_retry(url, max_retries=SCRAPER_CFG["max_retries"], backoff_base=SCRAPER_CFG["backoff_base"]):
+# Statusy, które ponawiamy: 503 (chwilowo niedostępny), 429 (rate limit — zwolnij).
+RETRIABLE_STATUS = {429, 503}
+
+def _retry_wait(response: requests.Response | None, attempt: int, backoff_base: float) -> float:
+    """Ile czekać przed kolejną próbą. Przy 429 szanujemy Retry-After (serwer mówi 'zwolnij'),
+    poza tym exponential backoff + jitter. Obsługujemy formę Retry-After w sekundach."""
+    if response is not None and response.status_code == 429:
+        retry_after = response.headers.get("Retry-After", "")
+        if retry_after.isdigit():
+            logger.debug("Retry-After: %s s", retry_after)
+            return float(retry_after)
+    return backoff_base ** attempt + random.uniform(0, 1)
+
+def _get_with_retry(url: str, max_retries: int = SCRAPER_CFG["max_retries"], backoff_base: float = SCRAPER_CFG["backoff_base"]) -> requests.Response | None:
     response = None
     for attempt in range(max_retries + 1):
         try:
             response = requests.get(url, timeout=(5, 30), headers=build_headers())  # (connect=5s, read=30s)
-            if response.status_code != 503 and not _is_challenge_page(response):
+            if response.status_code not in RETRIABLE_STATUS and not _is_challenge_page(response):
                 return response
-            reason = response.status_code if response.status_code == 503 else "challenge"
+            reason = response.status_code if response.status_code in RETRIABLE_STATUS else "challenge"
         except requests.RequestException as exc:
             response = None
             reason = f"błąd sieci ({exc.__class__.__name__})"
 
         if attempt < max_retries:
-            wait = backoff_base ** attempt + random.uniform(0, 1)
-            print(f"{reason}, retry {attempt + 1}/{max_retries} za {wait:.1f}s")
+            wait = _retry_wait(response, attempt, backoff_base)
+            logger.warning("%s, retry %d/%d za %.1fs", reason, attempt + 1, max_retries, wait)
             time.sleep(wait)
 
     return response
 
-def fetched_to_csv(books):
+def fetched_to_csv(books: list[dict]) -> None:
     os.makedirs(RAW_DATA_DIR, exist_ok=True)
     scraped_at = datetime.now()
     timestamp = scraped_at.strftime("%Y%m%d_%H%M%S")
@@ -56,7 +71,7 @@ def fetched_to_csv(books):
     df = pd.DataFrame(books)
     df["scraped_at"] = scraped_at.isoformat()
     df.to_csv(filepath, index=False)
-    print(f"zapisano {len(df)} wierszy do {filepath}")
+    logger.info("zapisano %d wierszy do %s", len(df), filepath)
 
 def parse_books(html: bytes | str) -> list[dict]:
     """Parsuje HTML strony wyników → lista książek. Czysta funkcja: bez sieci i I/O."""
@@ -79,7 +94,7 @@ def parse_books(html: bytes | str) -> list[dict]:
     return books
 
 
-def fetch_books(num_pages=SCRAPER_CFG["num_pages"]):
+def fetch_books(num_pages: int = SCRAPER_CFG["num_pages"]) -> int:
     base_url = f"{SCRAPER_CFG['base_url']}?k={SCRAPER_CFG['keyword'].replace(' ', '+')}"
     books = []
 
@@ -88,13 +103,14 @@ def fetch_books(num_pages=SCRAPER_CFG["num_pages"]):
         response = _get_with_retry(url)
 
         if response is None:
-            print(f"strona {page}: brak odpowiedzi po wszystkich próbach (błąd sieci).")
+            logger.error("strona %d: brak odpowiedzi po wszystkich próbach (błąd sieci).", page)
             continue
         if _is_challenge_page(response):
-            print(f"strona {page}: Amazon zablokował zapytanie po wszystkich próbach.")
+            logger.error("strona %d: Amazon zablokował zapytanie po wszystkich próbach. Odczekuje 10s", page)
+            time.sleep(10)
             continue
         if response.status_code != 200:
-            print(f"strona {page}: błąd:", response.status_code)
+            logger.error("strona %d: błąd: %s", page, response.status_code)
             continue
 
         books.extend(parse_books(response.content))
@@ -108,43 +124,31 @@ def fetch_books(num_pages=SCRAPER_CFG["num_pages"]):
         fetched_to_csv(books)
         return len(books)
 
-def inspect_divs(url: str = None) -> None: # funkcja wyszukiwania kontenerów <div> na stronie www i pierwsze 300 znaków dla każdego
-    if url is None:
-        base_url = f"{SCRAPER_CFG['base_url']}?k={SCRAPER_CFG['keyword'].replace(' ', '+')}"
-        url = f"{base_url}&page=1"
-    response = _get_with_retry(url)
-    if response is None or _is_challenge_page(response):
-        print("Amazon zablokował zapytanie.")
-        return
-    soup = BeautifulSoup(response.content, "html.parser") 
-    types = sorted(set(
-        div.get("data-component-type")
-        for div in soup.find_all("div", attrs={"data-component-type": True})
-    ))
-    print(f"Znalezione data-component-type ({len(types)}):")
-    for t in types:
-        divs = soup.find_all("div", {"data-component-type": t})
-        print(f"\n  {len(divs):3}x  [{t}]")
-        print(f"       {str(divs[0])[:300]}...")
+# def inspect_divs(url: str | None = None) -> None: # funkcja wyszukiwania kontenerów <div> na stronie www i pierwsze 300 znaków dla każdego
+#     if url is None:
+#         base_url = f"{SCRAPER_CFG['base_url']}?k={SCRAPER_CFG['keyword'].replace(' ', '+')}"
+#         url = f"{base_url}&page=1"
+#     response = _get_with_retry(url)
+#     if response is None or _is_challenge_page(response):
+#         print("Amazon zablokował zapytanie.")
+#         return
+#     soup = BeautifulSoup(response.content, "html.parser") 
+#     types = sorted(set(
+#         div.get("data-component-type")
+#         for div in soup.find_all("div", attrs={"data-component-type": True})
+#     ))
+#     print(f"Znalezione data-component-type ({len(types)}):")
+#     for t in types:
+#         divs = soup.find_all("div", {"data-component-type": t})
+#         print(f"\n  {len(divs):3}x  [{t}]")
+#         print(f"       {str(divs[0])[:300]}...")
 
 
-def main():
+def main() -> None:
     fetch_books()
 
 
 if __name__ == "__main__":
     main()
     
-# zawsze na początek sprawdzaj to co zrobiłeś wczoraj
-# bash do czyszczenia dysku windows
-#napisać kilka testów
-#pydantic ... jak wdrożyć
-# ledger
-# Kurs programowania w Pythonie z Linuksem, część 3
-#zapis pobranych cvs automatycznie do buketa na AWS
-#przepisać to pod AWS i zacząć naukę AWS
-
-# ogarnąć co to snowflake
-#projekty do porfolio.
-#scraping z hendonmob. napisać samemu
 

@@ -30,3 +30,6 @@ dbt_project/dbt_packages/
 # docs — tylko architecture.md w repo
 docs/*
 !docs/architecture.md
+
+# moje notatki
+NOTEBOOK.md

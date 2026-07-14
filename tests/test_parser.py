@@ -40,3 +40,6 @@ def test_autor_nie_jest_formatem_wydania(sample_html):
 
 def test_pusty_html_zwraca_pusta_liste():
     assert parse_books("<html><body></body></html>") == []
+
+#def test_brak_ceny_brak_oceny():
+    

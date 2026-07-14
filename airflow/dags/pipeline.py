@@ -21,10 +21,16 @@ from airflow.providers.standard.operators.python import (
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.task.trigger_rule import TriggerRule
 from airflow.providers.slack.notifications.slack_webhook import SlackWebhookNotifier
+from airflow.utils.context import Context
 from main import fetch_books
 from ingest import ingest_books, RAW_DATA_DIR, DB_TABLE
 from connection import connection_db
-from logging_db import log_run_task, upsert_pipeline_run, BACKLOG_BRANCH
+from logging_db import (
+    log_run_task,
+    upsert_pipeline_run,
+    append_run_summary,
+    BACKLOG_BRANCH,
+)
 
 
 def _has_pending_files() -> bool:
@@ -41,7 +47,7 @@ def _branch_start() -> str:
     return BACKLOG_BRANCH if _has_pending_files() else "fetch_book"
 
 
-def task_failure_logger(context) -> None:
+def task_failure_logger(context: Context) -> None:
     """Per-task on_failure_callback (przez default_args — działa dla każdego taska).
 
     W przeciwieństwie do DAG-level on_failure_callback, ten uruchamia się w tym samym
@@ -67,7 +73,7 @@ DEF_ARGS = {
 }
 
 
-def dag_failure_alert(context) -> None:
+def dag_failure_alert(context: Context) -> None:
     dag_run_id = context["dag_run"].run_id
     SlackWebhookNotifier(
         slack_webhook_conn_id="slack_webhook_default",
@@ -81,9 +87,10 @@ def dag_failure_alert(context) -> None:
         context["dag_run"].dag_id,
         status="failed",
     )
+    append_run_summary(dag_run_id)
 
 
-def dag_success_alert(context) -> None:
+def dag_success_alert(context: Context) -> None:
     dag_run_id = context["dag_run"].run_id
     with connection_db() as con, con.cursor() as cur:
         cur.execute(
@@ -105,6 +112,7 @@ def dag_success_alert(context) -> None:
         ),
     )(context)
     upsert_pipeline_run(dag_run_id, context["dag_run"].dag_id, status="success")
+    append_run_summary(dag_run_id)
 
 
 with (

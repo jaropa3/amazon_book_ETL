@@ -6,3 +6,5 @@ testpaths = ["tests"]
 # W DAG-ach sys.path.insert MUSI wykonać się przed importami lokalnymi (from main import ...),
 # więc importy nie mogą być na samej górze pliku — E402 jest tu fałszywie pozytywny.
 "airflow/dags/*" = ["E402"]
+# Test importuje config po sys.path.insert (jak DAG-i) — E402 fałszywie pozytywny.
+"tests/test_branch_start.py" = ["E402"]

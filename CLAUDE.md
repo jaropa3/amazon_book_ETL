@@ -108,31 +108,78 @@ Testy są w dwóch miejscach:
   - `assert_int_books_unique_per_session.sql` — unikalność `(asin, scraped_at)` w `int_books`
 
 ### Rules
+- na początku każdej sesji przypominaj o pliku NOTEBOOK.md
 - jest to projekt do nauki, ale chce żeby się nadawał na produkcje i do pokazania seniorowi DE.
+  - bierz pod uwagą najnowsze koncepty data engineeringu i stacka pod oferty pracy w 2026. 
+- chce się uczyć angielskiego. Dodawaj w nawiasach kluczowe słowa, metody, funkcje lub koncepcy po angielsku (ang. TEKST)
 - zawsze zapytaj zanim coś faktycznie zmienisz w kodzie.
 - sprawdzaj reguły clean code (nie zmieniaj sam, tylko podpowiadaj)
   - DRY
+  - świadomy zakres (KISS/right-sized): disaster recovery, formalne SLO/error budget, feature flags, testy wydajnościowe, exactly-once — poza zakresem małego projektu; zapisz to zdaniem w README zamiast wdrażać (umiejętność nie-wdrażania to też decyzja architektoniczna)
   - Funkcja robi jedną rzecz (Single Responsibility).
   - Type hints.
-  - logging zamiast print.
+  - logging zamiast print. logger tak (zawsze), własny plik pod orkiestratorem nie (powielanie)
   - Errors should never pass silently — logowanie i wyjątki zamiast `except: pass`.
   - Fail Fast — program zgłasza błąd od razu (walidacja na wejściu), nie po godzinie liczenia; guard clauses to mikro-wersja tej zasady.
   - Single Source of Truth — jedna informacja zdefiniowana w jednym miejscu: np. `DATABASE_URL` nie występuje w 15 plikach (→ config), definicja metryki w jednym modelu dbt 
   - Convention over Configuration — ustalone konwencje (`tests/`, `src/`, `__init__.py`) zamiast setek opcji; dlatego wszystkie projekty pythonowe wyglądają podobnie.
   - Nazwy opisują przeznaczenie: zmienne rzeczownikami (`user_name`), funkcje czasownikami (`load_data()`, nie `data()`).
-  - snake_case dla funkcji/zmiennych/plików, **PascalCase** dla klas, **UPPER_CASE** dla stałych.
+  - snake_case dla funkcji/zmiennych/plików, PascalCase dla klas, UPPER_CASE dla stałych.
   - pathlib.Path zamiast ścieżek-stringów.
   - Konfiguracja poza kodem (env/.env/Secret Manager — nigdy hasło w źródle).
-  - Walidacja konfiguracji na starcie. walidacja przez schemat, przez Pydantic
   - i inne kluczowe reguły.
+- Decyzje architektoniczne
+  - idempotencja to kluczowa zasada
+  - Walidacja konfiguracji na starcie. walidacja przez schemat, przez Pydantic
+  - pilnuj pytest'ów
+  - projekt lokalny docelowo ma być mapowany pod AWS
+  - Pilnować mechaniki late arrive data. w data/ rozdzieli foldery na pliki przetworzone (processed) i nie przetworzone.
 - Pilnuj architektury projektu. A jeśli projekt jest świeży to podpowiedz mi żeby stworzyć to czego brakuje poniżej
   - .github/workflows
   - Linter — 'ruff'.
   - podpowiadaj mi o ruff check, uv i pytest co jakis czas.
   - .env
-  - README.md
+  - README.md odpowiada na 3 pytania **w tej kolejności**: co to i po co → jak uruchomić → jak działa; obcy rozumie projekt w 30 s i uruchamia w 5 min
+    - Quick start testowany „na czysto": komendy działają po świeżym `git clone`, bez rzeczy, które masz tylko lokalnie (`.env.example` pokazuje, co ustawić)
+    - obowiązkowa sekcja **„Decisions & trade-offs"**: każdy istotny wybór z uzasadnieniem („DuckDB zamiast Postgres, bo X, kosztem Y") + sekcja „Co bym poprawił" (szczerość > udawana perfekcja)
   - docs/architecture.md. Tu jest pokazany przepływ w całym projekcie
   - pyproject.toml
   - scripts/ miejsce na bashe
   - requirement.txt
-  - w data/ rozdzieli foldery na pliki przetworzone (processed) i nie przetworzone
+- Airflow
+  - "Watcher task" (standardowy wzorzec Airflow): log_run ma trigger_rule=ALL_DONE
+  - `catchup=False` domyślnie (chyba że świadomie przeliczasz historię)
+  - `max_active_runs=1` wszędzie, gdzie runy dzielą stan (TRUNCATE staging, self-trigger, backlog FIFO) — inaczej race condition kasuje dane bez błędu
+  - XCom tylko na metadane (ścieżka, batch_id, count) — dane w S3/DWH, przekazujesz wskaźnik
+  - zero ciężkiego kodu top-level w pliku DAG (`Variable.get()`, requesty, odczyty plików) — scheduler parsuje plik co ~30 s; pobieraj w środku `@task` lub przez Jinja
+  - DAG orkiestruje, nie oblicza — logika w `src/`/`include/`, testowalna pytestem bez Airflow; `dags/` cienkie
+  - sensory: `mode="reschedule"` (lub deferrable) + obowiązkowy `timeout` — sensor bez timeoutu wisi wiecznie i nie alertuje
+- Różne
+  - obowiązkowy timeout w requests.get()
+  - retry z exponential backoff + jitter (`tenacity`); przy `429` szanuj header `Retry-After` — zwolnij, nie próbuj mocniej
+  - funkcje transformujące czyste i deterministyczne — bez I/O i side-effectów (mail, zapis) w środku; efekty na brzegach systemu
+  - pliki > RAM: generatory / `chunksize` / streaming; dane > ~1–4 GB → Polars/DuckDB zamiast pandas
+  - paginacja: cursor/token zamiast offset/limit (offset drift gubi/dubluje rekordy na żywych danych); jeśli musi być offset → `ORDER BY` po stabilnym kluczu
+  - dedup po kluczu biznesowym / hashu payloadu, nie `drop_duplicates()` po całych wierszach
+  - czas przechowuj w UTC jako `TIMESTAMPTZ`; konwersja na strefę dopiero przy prezentacji
+  - bulk load przez `COPY`, nie `INSERT` po wierszu; staging bez indeksów i constraintów
+  - DDL (schemat) żyje w migracjach, nie w pipelinie — `CREATE TABLE IF NOT EXISTS` w każdym runie to zapach  
+  - gdy tabela ma downstream (widoki): przeładowuj dane (`TRUNCATE`+`INSERT`), nie strukturę (`DROP`+`CREATE`)
+  - surrogate key jako PK; unikalność biznesową wymuszaj osobnym `UNIQUE` 
+- Storage, chmura, koszty
+  - format kolumnowy (Parquet) + partycjonowanie po dacie/kolumnie niskokardynalnej; nie partycjonuj po `user_id` (small files) — wysokokardynalne klucze bucketuj
+  - docelowy rozmiar pliku ~100–128 MB; kompakcja przed zapisem (`coalesce`/`OPTIMIZE`)
+  - dostęp usług przez role IAM, nigdy klucze w kodzie/repo; least privilege — bez `Resource: "*"`; przy SSE-KMS pamiętaj `kms:Decrypt`/`GenerateDataKey`
+  - `SELECT` konkretnych kolumn, nie `SELECT *` (płacisz za skan); `LIMIT` nie zmniejsza skanu; filtr zawsze po kolumnie partycyjnej bez funkcji na niej
+  - compute i storage w tym samym regionie (egress to najdroższy transfer)
+  - lifecycle policy na buckety + `AbortIncompleteMultipartUpload`; retencja logów CloudWatch jawnie (default „never expire" = rosnący rachunek)
+  - Snowflake: auto-suspend 60 s, nie default 600 s
+  - billing alert / budżet pierwszego dnia; tagi `Environment`/`Owner`/`Project` na każdym zasobie
+  - dobieraj silnik do skali: DuckDB/Polars single-node zanim Spark; Lambda ma limit 15 min — nie dla ETL; klaster transient per job, nie 24/7
+- Testy i CI/CD
+  - pytest testuje **kod** (wyzwalacz: PR/push → CI), dbt test testuje **dane** (wyzwalacz: scheduler → DAG) — nie mieszaj: pytest nie jest taskiem w DAG-u
+  - pre-commit: `ruff format` → `ruff check` → mypy → pytest (od najtańszego do najdroższego); te same checki jako brama w CI
+  - testy nie wołają prawdziwego API — mocki/fixtures (nagrane odpowiedzi); realny kontakt tylko w osobnym smoke teście
+  - testy integracyjne izolowane: świeży schemat/kontener per run, kolejność wykonania bez znaczenia
+  - pierwszy `pre-commit run --all-files` osobnym commitem (szum formatowania oddzielony od logiki)
+  - test wygenerowany przez AI weryfikuj mutacją: zepsuj funkcję celowo — test ma paść
