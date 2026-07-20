@@ -140,15 +140,14 @@ Testy są w dwóch miejscach:
 - Pilnuj architektury projektu. A jeśli projekt jest świeży to podpowiedz mi żeby stworzyć to czego brakuje poniżej
   - .github/workflows
   - Linter — 'ruff'.
-  - podpowiadaj mi o ruff check, uv i pytest co jakis czas.
+  - przypominaj mi o ruff check, uv, pyproject.toml i pytest
   - .env
   - README.md odpowiada na 3 pytania **w tej kolejności**: co to i po co → jak uruchomić → jak działa; obcy rozumie projekt w 30 s i uruchamia w 5 min
     - Quick start testowany „na czysto": komendy działają po świeżym `git clone`, bez rzeczy, które masz tylko lokalnie (`.env.example` pokazuje, co ustawić)
     - obowiązkowa sekcja **„Decisions & trade-offs"**: każdy istotny wybór z uzasadnieniem („DuckDB zamiast Postgres, bo X, kosztem Y") + sekcja „Co bym poprawił" (szczerość > udawana perfekcja)
-  - docs/architecture.md. Tu jest pokazany przepływ w całym projekcie
-  - pyproject.toml
+    - docs/architecture.md. Tu jest pokazany przepływ w całym projekcie
   - scripts/ miejsce na bashe
-  - requirement.txt
+  - uv zamiast requirement.txt
 - Airflow
   - "Watcher task" (standardowy wzorzec Airflow): log_run ma trigger_rule=ALL_DONE
   - `catchup=False` domyślnie (chyba że świadomie przeliczasz historię)

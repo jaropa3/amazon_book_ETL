@@ -1,5 +1,5 @@
 """Test integralności DAG-a — łapie błędy importu/składni i literówki w task_id
-zanim zobaczy je scheduler. Wymaga Airflow (jest w requirements-dev.txt)."""
+zanim zobaczy je scheduler. Wymaga Airflow (grupa dev w pyproject.toml)."""
 
 from pathlib import Path
 
@@ -12,7 +12,7 @@ DAG_ID = "amazon_books_pipeline"
 
 @pytest.fixture(scope="module")
 def dagbag() -> DagBag:
-    return DagBag(dag_folder=DAG_FOLDER, include_examples=False)
+    return DagBag(dag_folder=DAG_FOLDER)
 
 
 def test_dag_laduje_sie_bez_bledow(dagbag):

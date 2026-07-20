@@ -1,7 +1,0 @@
-# Zależności dla GitHub Actions scrape.yml — tylko scraper (main.py + config.py).
-# Podzbiór "pipeline runtime" z requirements.in, bez bazy/orkiestracji/dbt.
-# Wersje zpinowane pod requirements.txt (powtarzalny build).
-beautifulsoup4==4.15.0
-pandas==3.0.3
-PyYAML==6.0.3
-requests==2.34.2

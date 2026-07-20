@@ -1,7 +1,0 @@
-# Zależności deweloperskie — narzędzia do testów, lintowania i typów.
-# Wciąga też zależności produkcyjne (kod musi się dać zaimportować w testach).
--r requirements.txt
-
-pytest
-ruff
-pyright

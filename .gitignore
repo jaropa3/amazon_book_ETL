@@ -26,6 +26,7 @@ dbt_project/dbt_packages/
 
 # Claude Code
 .claude/
+CLAUDE.md
 
 # docs — tylko architecture.md w repo
 docs/*
