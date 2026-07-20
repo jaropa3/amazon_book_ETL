@@ -24,6 +24,9 @@ def setup_logger(name: str) -> logging.Logger:
     if logger.handlers:
         return logger
     logger.setLevel(logging.INFO)
+    # Bez propagacji do roota (ang. logger hierarchy): pod Airflow root ma własne
+    # handlery — inaczej każdy rekord byłby emitowany dwa razy (double logging).
+    logger.propagate = False
 
     stream_handler = logging.StreamHandler(sys.stdout)
     stream_handler.setFormatter(_FORMATTER)

@@ -28,10 +28,11 @@ dbt run --project-dir dbt_project --profiles-dir ~/.dbt --select intermediate
 dbt run --project-dir dbt_project --profiles-dir ~/.dbt --select marts
 ```
 
-**dbt — pełne przebudowanie modelu incremental (np. po zmianie schematu gold):**
-```bash
-dbt run --project-dir dbt_project --profiles-dir ~/.dbt --full-refresh --select fct_books_history
-```
+**⚠️ NIE rób `--full-refresh` na `fct_books_history`.** To model incremental czytający
+z `int_books` ← `bronze`, a bronze jest TRUNCATE'owany co run (jedna sesja). `--full-refresh`
+= `DROP` + odbudowa z bieżącej sesji → **cała historia gold ginie** (nieodwracalne poza
+ręcznym replayem wszystkich CSV z `processed/`). Zmiana schematu gold = dopisz kolumnę
+migracją albo przebuduj przez kontrolowany replay, nie przez `--full-refresh`.
 
 **Airflow (uruchomienie lokalne):**
 ```bash
@@ -69,16 +70,16 @@ Amazon.com → main.py (scraper) → data/raw_data/books_YYYYMMDD_HHMMSS.csv
 - **int_books deduplicuje po `(asin, scraped_at)`** — usuwa duplikaty z tej samej sesji, preferując wiersz z kompletniejszymi danymi. Unikalność `asin` per sesja jest testowana przez singular test.
 - **gold jest incremental** z `unique_key='book_sk'`, gdzie `book_sk = md5(asin || '_' || scraped_at::text)`. Kumuluje każdą sesję scrapowania. Brak filtra `WHERE scraped_at > MAX(scraped_at)` — celowa decyzja chroniąca late-arriving data.
 - **staging i intermediate są widokami** (`materialized: view`) — nie ma kosztownych tabel pośrednich.
-- **Wszystkie kolumny w bronze są TEXT** — dbt staging robi typowanie przez `::numeric`, `::timestamp`.
+- **Wszystkie kolumny w bronze są TEXT** — dbt staging robi typowanie przez `::numeric`, `::timestamptz` (czas w UTC end-to-end: `scraped_at` powstaje jako `datetime.now(timezone.utc)`).
 - **Scraper szuka autora** przez `href` zawierający `/e/ASIN` — nie przez klasę CSS (która łapała też "Paperback", "Kindle Edition" itp.).
 - **`run_type` w logach** — `logs.pipeline_runs.run_type` = `'normal'` (scrape + ingest) lub `'backlog'` (tylko ingest zaległego pliku). Odczytywany z XCom `check_pending_start`. Porównanie odbywa się przez stałą `BACKLOG_BRANCH = "skip_fetch"` zdefiniowaną w `logging_db.py` i importowaną w `pipeline.py` (task_id `skip_fetch` EmptyOperatora) — zmiana nazwy gałęzi wymaga edycji jednego miejsca.
 
 ### Pliki konfiguracyjne
 
-- `config.yaml` — parametry scrapera (URL, keyword, liczba stron, retry), ścieżki, schemat/tabela w DB. Ładowany przez `config.py` jako dict `CONFIG`.
-- `.env` — dane do połączenia z PostgreSQL (`POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`). Baza działa w Dockerze, host `host.docker.internal`.
+- `config.yaml` — parametry scrapera (URL, keyword, liczba stron, retry), ścieżki, schemat/tabela w DB. Ładowany i **walidowany schematem Pydantic** w `config.py` → obiekt `CONFIG` z dostępem atrybutowym (`CONFIG.scraper.num_pages`, nie `CONFIG["scraper"]`). Błędny/niekompletny config → wyjątek na starcie (Fail Fast).
+- `.env` — dane do połączenia z PostgreSQL (`POSTGRES_DB`, `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`). PostgreSQL 16 natywnie pod Windows (usługa `postgresql-x64-16`, PGDATA w `C:\Program Files\PostgreSQL\16\data`) — **nie w Dockerze**; z WSL dostępny przez `host.docker.internal` (IP hosta Windows wstrzykiwane przez Docker Desktop do `/etc/hosts`). Znana kruchość: odinstalowanie Docker Desktop zabiera ten wpis i zrywa połączenie, a IP zmienia się z DHCP.
 - `~/.dbt/profiles.yml` — profil dbt (poza repozytorium).
-- `sql/schema.sql` — DDL całej bazy: `bronze.books` (dane, kolumny TEXT) + `logs.pipeline_runs` (rejestr runów). Uruchamiane **raz** przez `scripts/init_db.py` przy standupie bazy — poza pipeline'em. `ingest.py` robi tylko `TRUNCATE`+`INSERT`, `logging_db.py` tylko UPSERT; struktury nie tworzą, zakładają że istnieje (nieznana kolumna → Fail Fast).
+- `sql/schema.sql` — DDL całej bazy: `bronze.books` (dane, kolumny TEXT) + `logs.pipeline_runs` (rejestr runów, `dag_run_id` z `UNIQUE`). Uruchamiane **raz** przez `scripts/init_db.py` przy standupie bazy — poza pipeline'em. `ingest.py` robi tylko `TRUNCATE`+`COPY` (bulk load), `logging_db.py` tylko atomowy UPSERT (`INSERT … ON CONFLICT (dag_run_id) DO UPDATE`); struktury nie tworzą, zakładają że istnieje (nieznana kolumna → Fail Fast).
 
 ### Airflow DAG
 
@@ -110,6 +111,7 @@ Testy są w dwóch miejscach:
 
 ### Rules
 - na początku każdej sesji przypominaj o pliku NOTEBOOK.md
+- Opisuj mi jakich narzędzi urzyłeś do debugowania i testowania. Chodzi mi głównie o bashe jak curl, ss czy ps
 - jest to projekt do nauki, ale chce żeby się nadawał na produkcje i do pokazania seniorowi DE.
   - bierz pod uwagą najnowsze koncepty data engineeringu i stacka pod oferty pracy w 2026. 
 - uczę się angielskiego. Dodawaj w nawiasach kluczowe słowa, metody, funkcje lub koncepcy po angielsku (ang. TEKST). Zależy mi na tym !!!
@@ -164,7 +166,6 @@ Testy są w dwóch miejscach:
   - dedup po kluczu biznesowym / hashu payloadu, nie `drop_duplicates()` po całych wierszach
   - czas przechowuj w UTC jako `TIMESTAMPTZ`; konwersja na strefę dopiero przy prezentacji
   - bulk load przez `COPY`, nie `INSERT` po wierszu; staging bez indeksów i constraintów
-  - DDL (schemat) żyje w migracjach, nie w pipelinie — `CREATE TABLE IF NOT EXISTS` w każdym runie to zapach niedojrzałości. Doc
   - gdy tabela ma downstream (widoki): przeładowuj dane (`TRUNCATE`+`INSERT`), nie strukturę (`DROP`+`CREATE`)
   - surrogate key jako PK; unikalność biznesową wymuszaj osobnym `UNIQUE` 
 - Storage, chmura, koszty
@@ -184,3 +185,7 @@ Testy są w dwóch miejscach:
   - testy integracyjne izolowane: świeży schemat/kontener per run, kolejność wykonania bez znaczenia
   - pierwszy `pre-commit run --all-files` osobnym commitem (szum formatowania oddzielony od logiki)
   - test wygenerowany przez AI weryfikuj mutacją: zepsuj funkcję celowo — test ma paść
+- Bazy i SQL
+  - Standardowe rozwiązanie w hurtowni to nie DISTINCT, tylko świadomy wybór jednej wersji na klucz biznesowy (ang. business key) — najczęściej najnowszej, przez okno row_number()
+  - DDL (schemat) żyje w migracjach, nie w pipelinie — `CREATE TABLE IF NOT EXISTS` w każdym runie to zapach niedojrzałości. Docelowo należy używać narzędzia do migracji.
+  - Dobrym rozwiązaniem jest skrypt init_db.py, pomagający zainicjować schema.sql

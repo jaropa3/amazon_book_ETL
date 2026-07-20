@@ -3,6 +3,7 @@ import traceback
 from datetime import datetime, timezone
 from typing import Any
 
+import psycopg
 from dotenv import load_dotenv
 
 from connection import connection_db
@@ -10,6 +11,8 @@ from logger import setup_logger
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(PROJECT_DIR, ".env"), encoding="utf-8-sig")
+
+logger = setup_logger("Amazon_books_ETL_DB_connection")
 
 BACKLOG_BRANCH = "skip_fetch"
 
@@ -31,26 +34,35 @@ def gold_rows_affected(scraped_at: str) -> int:
         return 0
 
 
-def registry_new_rows_count(scraped_at: str) -> int:
+def registry_new_rows_count(scraped_at: str) -> int | None:
+    """Liczba ASIN-ów widzianych po raz pierwszy w sesji `scraped_at`.
+
+    None oznacza „nie wiem" (gold jeszcze nie zbudowany) — w odróżnieniu od 0,
+    które znaczy „wiem, że żadnych nowych". Ta różnica trafia do logs.pipeline_runs.
+    """
     try:
         with connection_db() as con, con.cursor() as cur:
             cur.execute(
                 """
-                SELECT COUNT(DISTINCT asin)
-                FROM public_marts.fct_books_history
-                WHERE scraped_at = %s
-                  AND asin NOT IN (
-                      SELECT asin FROM public_marts.fct_books_history
-                      WHERE scraped_at < %s
+                SELECT COUNT(DISTINCT h.asin)
+                FROM public_marts.fct_books_history h
+                WHERE h.scraped_at = %(scraped_at)s
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM public_marts.fct_books_history prev
+                      WHERE prev.asin = h.asin
+                        AND prev.scraped_at < %(scraped_at)s
                   )
-            """,
-                (scraped_at, scraped_at),
+                """,
+                {"scraped_at": scraped_at},
             )
-            count = cur.fetchone()[0]
-        return count
-    except Exception:
-        traceback.print_exc()
-        return 0
+            return cur.fetchone()[0]
+    except psycopg.errors.UndefinedTable:
+        logger.warning(
+            "brak public_marts.fct_books_history — metryka registry_new dla sesji %s nieznana",
+            scraped_at,
+        )
+        return None
 
 
 def upsert_pipeline_run(
@@ -86,24 +98,35 @@ def upsert_pipeline_run(
     Pojedyncza, wspólna funkcja zamiast osobnego INSERT-u i osobnego UPDATE-u — dwie
     niezależne ścieżki zapisu nieuchronnie tworzyły dwa wiersze dla tego samego runu.
     """
-    status_sql = (
-        "status=COALESCE(%s, status)"
+    # status ma dwa kierunki COALESCE (patrz overwrite_status w docstringu);
+    # reszta pól zawsze COALESCE(nowa, stara), żeby częściowy zapis nie zerował
+    # danych innego writera. EXCLUDED = wiersz, który próbowaliśmy wstawić.
+    status_update = (
+        "COALESCE(EXCLUDED.status, logs.pipeline_runs.status)"
         if overwrite_status
-        else "status=COALESCE(status, %s)"
+        else "COALESCE(logs.pipeline_runs.status, EXCLUDED.status)"
     )
+    # Atomowy UPSERT jednym zapytaniem — check-then-act (UPDATE, potem INSERT gdy
+    # rowcount=0) miał race: dwa równoległe callbacki widziały brak wiersza i oba
+    # robiły INSERT → dwa wiersze na jeden dag_run. ON CONFLICT tego nie dopuszcza.
     with connection_db() as con, con.cursor() as cur:
         cur.execute(
-            f"""UPDATE logs.pipeline_runs
-               SET {status_sql},
-                   run_type=COALESCE(%s, run_type),
-                   scraped_count=COALESCE(%s, scraped_count),
-                   gold_inserted_count=COALESCE(%s, gold_inserted_count),
-                   registry_new_count=COALESCE(%s, registry_new_count),
-                   failed_task=COALESCE(%s, failed_task),
-                   error_message=COALESCE(%s, error_message),
-                   duration_seconds=COALESCE(%s, duration_seconds)
-               WHERE dag_run_id=%s""",
+            f"""INSERT INTO logs.pipeline_runs
+                   (dag_run_id, dag_id, status, run_type, scraped_count, gold_inserted_count,
+                    registry_new_count, failed_task, error_message, duration_seconds)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (dag_run_id) DO UPDATE SET
+                   status={status_update},
+                   run_type=COALESCE(EXCLUDED.run_type, logs.pipeline_runs.run_type),
+                   scraped_count=COALESCE(EXCLUDED.scraped_count, logs.pipeline_runs.scraped_count),
+                   gold_inserted_count=COALESCE(EXCLUDED.gold_inserted_count, logs.pipeline_runs.gold_inserted_count),
+                   registry_new_count=COALESCE(EXCLUDED.registry_new_count, logs.pipeline_runs.registry_new_count),
+                   failed_task=COALESCE(EXCLUDED.failed_task, logs.pipeline_runs.failed_task),
+                   error_message=COALESCE(EXCLUDED.error_message, logs.pipeline_runs.error_message),
+                   duration_seconds=COALESCE(EXCLUDED.duration_seconds, logs.pipeline_runs.duration_seconds)""",
             (
+                dag_run_id,
+                dag_id,
                 status,
                 run_type,
                 scraped_count,
@@ -112,28 +135,8 @@ def upsert_pipeline_run(
                 failed_task,
                 error_message,
                 duration_seconds,
-                dag_run_id,
             ),
         )
-        if cur.rowcount == 0:
-            cur.execute(
-                """INSERT INTO logs.pipeline_runs
-                   (dag_run_id, dag_id, status, run_type, scraped_count, gold_inserted_count,
-                    registry_new_count, failed_task, error_message, duration_seconds)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                (
-                    dag_run_id,
-                    dag_id,
-                    status,
-                    run_type,
-                    scraped_count,
-                    gold_inserted_count,
-                    registry_new_count,
-                    failed_task,
-                    error_message,
-                    duration_seconds,
-                ),
-            )
 
 
 def log_run_task(**context: Any) -> None:

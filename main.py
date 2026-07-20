@@ -63,7 +63,7 @@ def _get_with_retry(url: str, max_retries: int = SCRAPER_CFG.max_retries, backof
 
     return response
 
-def fetched_to_csv(books: list[dict]) -> None:
+def save_books_to_csv(books: list[dict]) -> None:
     os.makedirs(RAW_DATA_DIR, exist_ok=True)
     scraped_at = datetime.now(timezone.utc)  # UTC-aware — isoformat() dokłada offset +00:00
     timestamp = scraped_at.strftime("%Y%m%d_%H%M%S")
@@ -94,7 +94,9 @@ def parse_books(html: bytes | str) -> list[dict]:
     return books
 
 
-def fetch_books(num_pages: int = SCRAPER_CFG.num_pages) -> int:
+def fetch_books(num_pages: int = SCRAPER_CFG.num_pages) -> list[dict]:
+    """Pobiera i parsuje strony wyników → lista książek. Bez zapisu na dysk —
+    efekt uboczny (I/O) żyje w scrape_to_csv, na brzegu systemu (ang. side effect at the edge)."""
     base_url = f"{SCRAPER_CFG.base_url}?k={SCRAPER_CFG.keyword.replace(' ', '+')}"
     books = []
 
@@ -118,14 +120,21 @@ def fetch_books(num_pages: int = SCRAPER_CFG.num_pages) -> int:
         if page < num_pages:
             delay = SCRAPER_CFG.delay_between_pages
             time.sleep(random.uniform(delay.min, delay.max))
-    if len(books) < 1:
+    if not books:
         raise RuntimeError("Nie udało się zebrać żadnych danych z Amazona.")
-    else:
-        fetched_to_csv(books)
-        return len(books)
+
+    return books
+
+
+def scrape_to_csv(num_pages: int = SCRAPER_CFG.num_pages) -> int:
+    """Brzeg systemu (ang. edge): pobiera i zapisuje CSV. Zwraca liczbę książek → XCom."""
+    books = fetch_books(num_pages)
+    save_books_to_csv(books)
+    return len(books)
+
 
 def main() -> None:
-    fetch_books()
+    scrape_to_csv()
 
 
 if __name__ == "__main__":

@@ -26,7 +26,7 @@ CREATE SCHEMA IF NOT EXISTS logs;
 CREATE TABLE IF NOT EXISTS logs.pipeline_runs (
     run_id                SERIAL PRIMARY KEY,
     run_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
-    dag_run_id            TEXT,
+    dag_run_id            TEXT UNIQUE,   -- wymagane przez ON CONFLICT w upsert_pipeline_run
     dag_id                TEXT,
     status                TEXT,
     run_type              TEXT,

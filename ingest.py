@@ -42,9 +42,23 @@ def _pick_oldest_file(raw_dir: Path, table: str) -> Path:
     return files[0]
 
 
+def _validate_raw(df: pd.DataFrame, source: Path) -> None:
+    """Fail Fast: waliduj PRZED dotknięciem bazy. Bez tego pusty/uszkodzony plik
+    TRUNCATE'uje bronze i ląduje w processed/, a task pada dopiero na .iloc[0] —
+    czyli bronze wyczyszczony, plik skonsumowany, dane sesji stracone bezpowrotnie.
+    """
+    if df.empty:
+        raise ValueError(f"Pusty plik CSV (0 wierszy): {source}")
+    if "scraped_at" not in df.columns:
+        raise ValueError(f"Brak kolumny scraped_at w {source}")
+    if df["scraped_at"].isna().all():
+        raise ValueError(f"Kolumna scraped_at pusta w {source}")
+
+
 def ingest_books() -> str:
     file_to_process = _pick_oldest_file(Path(RAW_DATA_DIR), DB_TABLE)
     books_raw = pd.read_csv(file_to_process, dtype=str)
+    _validate_raw(books_raw, file_to_process)
 
     with connection_db() as con, con.cursor() as cur:
         _insert(cur, DB_SCHEMA, DB_TABLE, books_raw)

@@ -1,9 +1,19 @@
 """Testy jednostkowe scrapera — bez sieci i bez bazy danych."""
 
+from pathlib import Path
+
+import pytest
 import requests
 
 import main
-from main import USER_AGENTS, _get_with_retry, _is_challenge_page, build_headers
+from main import (
+    USER_AGENTS,
+    _get_with_retry,
+    _is_challenge_page,
+    build_headers,
+    fetch_books,
+    scrape_to_csv,
+)
 
 
 class FakeResponse:
@@ -121,3 +131,56 @@ def test_retry_zwraca_none_gdy_stale_bledy_sieci(monkeypatch):
     result = _get_with_retry("http://x", max_retries=3, backoff_base=2)
     assert result is None
     assert calls["n"] == 4  # max_retries + 1 prób
+
+
+# ── fetch_books / scrape_to_csv ───────────────────────────────────────
+
+FIXTURE = Path(__file__).parent / "fixtures" / "search_page.html"
+
+
+def _search_page_response() -> FakeResponse:
+    """Strona wyników z fixture (2 książki), dopchana spacjami do >5000 B.
+
+    Poniżej tego progu _is_challenge_page uznałby ją za blokadę Amazona i
+    fetch_books pominąłby stronę. BeautifulSoup padding ignoruje.
+    """
+    return FakeResponse(content=FIXTURE.read_bytes().ljust(6000))
+
+
+def test_fetch_books_zwraca_ksiazki_ze_wszystkich_stron(monkeypatch):
+    _patch_get(monkeypatch, [_search_page_response()])
+    books = fetch_books(num_pages=3)
+    assert len(books) == 6  # 3 strony × 2 książki z fixture
+
+
+def test_fetch_books_nie_zapisuje_na_dysk(monkeypatch):
+    """Regresja (ang. mutation guard): zapis to efekt uboczny na brzegu systemu
+    (scrape_to_csv). Gdyby ktoś wrócił z save_books_to_csv() do fetch_books, test pada.
+    """
+    _patch_get(monkeypatch, [_search_page_response()])
+    zapisy = []
+    monkeypatch.setattr(main, "save_books_to_csv", lambda *a, **k: zapisy.append(1))
+
+    fetch_books(num_pages=1)
+
+    assert zapisy == []
+
+
+def test_fetch_books_rzuca_gdy_zadna_strona_sie_nie_udala(monkeypatch):
+    """Fail Fast: same błędy → wyjątek, a nie cichy pusty CSV."""
+    _patch_get(monkeypatch, [FakeResponse(status_code=503)])  # zawsze 503
+    with pytest.raises(RuntimeError):
+        fetch_books(num_pages=2)
+
+
+def test_scrape_to_csv_zapisuje_raz_i_zwraca_liczbe(monkeypatch):
+    """Brzeg systemu: pobiera + zapisuje dokładnie raz, zwraca licznik → XCom."""
+    _patch_get(monkeypatch, [_search_page_response()])
+    zapisane = []
+    monkeypatch.setattr(main, "save_books_to_csv", lambda books: zapisane.append(books))
+
+    count = scrape_to_csv(num_pages=2)
+
+    assert count == 4  # 2 strony × 2 książki
+    assert len(zapisane) == 1  # zapis dokładnie raz
+    assert len(zapisane[0]) == 4

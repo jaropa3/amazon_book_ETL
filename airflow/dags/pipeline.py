@@ -22,7 +22,7 @@ from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOpe
 from airflow.task.trigger_rule import TriggerRule
 from airflow.providers.slack.notifications.slack_webhook import SlackWebhookNotifier
 from airflow.sdk.definitions.context import Context
-from main import fetch_books
+from main import scrape_to_csv
 from ingest import ingest_books, RAW_DATA_DIR, DB_TABLE
 from connection import connection_db
 from logging_db import (
@@ -68,7 +68,7 @@ def task_failure_logger(context: Context) -> None:
 DEF_ARGS = {
     "retries": 2,
     "retry_delay": timedelta(minutes=1),
-    "execution_timeout": timedelta(minutes=3),
+    "execution_timeout": timedelta(minutes=5),
     "on_failure_callback": task_failure_logger,
 }
 
@@ -138,7 +138,7 @@ with (
 
     fetch_from_API = PythonOperator(
         task_id="fetch_book",
-        python_callable=fetch_books,
+        python_callable=scrape_to_csv,
     )
 
     ingest_bronze = PythonOperator(

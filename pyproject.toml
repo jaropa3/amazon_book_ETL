@@ -1,3 +1,27 @@
+[project]
+name = "amazon-books-etl"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "requests",
+    "beautifulsoup4",
+    "pandas",
+    "psycopg[binary]",
+    "PyYAML",
+    "python-dotenv",
+    "apache-airflow",
+    "apache-airflow-providers-standard",
+    "apache-airflow-providers-slack",
+    "dbt-core",
+    "dbt-postgres",
+]
+
+[project.optional-dependencies]
+scrape = ["requests", "beautifulsoup4", "pandas", "PyYAML"]
+
+[dependency-groups]
+dev = ["pytest", "ruff", "pyright"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
